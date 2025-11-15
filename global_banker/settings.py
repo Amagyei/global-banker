@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-8xaiupqx2(dmj-0w58=#-mfyks!@&ml!%9=_iig#=yqp&cv6ac
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -73,6 +73,11 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',  # Vite dev server (default)
     'http://localhost:8080',  # Alternative Vite port
+    'http://80.78.23.17',     # Production IP
+    'http://bvnkpro.com',     # Production domain
+    'https://bvnkpro.com',    # Production domain (HTTPS)
+    'http://www.bvnkpro.com', # Production domain
+    'https://www.bvnkpro.com', # Production domain (HTTPS)
 ]
 
 CORS_ALLOW_CREDENTIALS = True
