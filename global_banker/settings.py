@@ -73,7 +73,11 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',  # Vite dev server (default)
     'http://localhost:8080',  # Alternative Vite port
+    'http://localhost:8081',  # Alternative Vite port
     'http://80.78.23.17',     # Production IP
+    'http://80.78.23.17:8080', # Vite dev server on production IP
+    'http://80.78.23.17:8081', # Vite dev server on production IP (alternative)
+    'http://80.78.23.17:8082', # Vite dev server on production IP (alternative)
     'http://bvnkpro.com',     # Production domain
     'https://bvnkpro.com',    # Production domain (HTTPS)
     'http://www.bvnkpro.com', # Production domain
@@ -179,6 +183,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
