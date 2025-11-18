@@ -12,6 +12,100 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from datetime import timedelta
 from pathlib import Path
+import os
+
+# Load environment variables from .env file
+# This MUST happen before any settings that depend on environment variables
+# Try multiple paths to find .env file (handles different execution contexts)
+env_paths = [
+    Path(__file__).resolve().parent.parent / '.env',  # Standard location
+    Path.cwd() / '.env',  # Current working directory
+    Path(__file__).resolve().parent / '.env',  # Same dir as settings.py
+]
+
+env_path = None
+for path in env_paths:
+    if path.exists():
+        env_path = path
+        break
+
+if env_path:
+    try:
+        from dotenv import load_dotenv
+        # Always load .env file - use override=True to ensure .env values are used
+        # This ensures the variable is loaded even if Django reloader creates new processes
+        result = load_dotenv(dotenv_path=env_path, override=True)
+        
+        # Verify it was loaded
+        xpub_loaded = os.environ.get('DEFAULT_XPUB', '')
+        if not xpub_loaded:
+            # Fallback: read directly from file if load_dotenv didn't work
+            try:
+                with open(env_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        if 'DEFAULT_XPUB' in line and '=' in line:
+                            # Handle both DEFAULT_XPUB=value and DEFAULT_XPUB = value
+                            if '=' in line:
+                                key, value = line.split('=', 1)
+                                key = key.strip()
+                                if key == 'DEFAULT_XPUB':
+                                    value = value.strip()
+                                    # Remove quotes
+                                    if value.startswith('"') and value.endswith('"'):
+                                        value = value[1:-1]
+                                    elif value.startswith("'") and value.endswith("'"):
+                                        value = value[1:-1]
+                                    if value:
+                                        os.environ['DEFAULT_XPUB'] = value
+                                        xpub_loaded = value
+                                        break
+            except Exception as e:
+                print(f"⚠ Failed to read DEFAULT_XPUB from .env file: {e}")
+        
+        if xpub_loaded:
+            print(f"✓ Loaded .env file from {env_path}")
+            print(f"✓ DEFAULT_XPUB loaded (length: {len(xpub_loaded)})")
+            # Ensure it's definitely in os.environ
+            os.environ['DEFAULT_XPUB'] = xpub_loaded
+        else:
+            print(f"⚠ .env file exists at {env_path} but DEFAULT_XPUB not found")
+            print(f"  File readable: {env_path.is_file()}")
+    except ImportError:
+        # Fallback: manually read .env file if python-dotenv is not installed
+        print(f"⚠ python-dotenv not installed, manually loading .env from {env_path}")
+        try:
+            with open(env_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    # Skip comments and empty lines
+                    if not line or line.startswith('#'):
+                        continue
+                    # Parse KEY=VALUE format
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        # Remove quotes if present
+                        if value.startswith('"') and value.endswith('"'):
+                            value = value[1:-1]
+                        elif value.startswith("'") and value.endswith("'"):
+                            value = value[1:-1]
+                        # Set environment variable (override existing if needed)
+                        if key and value:
+                            os.environ[key] = value
+            xpub_loaded = os.environ.get('DEFAULT_XPUB', '')
+            print(f"✓ Manually loaded .env file")
+            if xpub_loaded:
+                print(f"✓ DEFAULT_XPUB found in .env (length: {len(xpub_loaded)})")
+            else:
+                print(f"⚠ DEFAULT_XPUB not found in .env file")
+        except Exception as e:
+            print(f"⚠ Failed to manually load .env file: {e}")
+else:
+    print(f"⚠ .env file not found in any of these locations: {env_paths}")
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -101,10 +195,18 @@ CORS_ALLOW_HEADERS = [
 # Extended public key (xpub) for address derivation
 # WARNING: Never store xprv (extended private key) on the server
 # In production, encrypt this value and store in secret manager
-DEFAULT_XPUB = ''  # Set via environment variable in production
+# NOTE: This is loaded AFTER .env file is loaded above, so it will pick up DEFAULT_XPUB from .env
+DEFAULT_XPUB = os.getenv('DEFAULT_XPUB', '')  # Set via environment variable in production
 
 # Test mode: Use mock addresses instead of real blockchain
-WALLET_TEST_MODE = True  # Set to False when using real blockchain
+# Set to False in production when using real blockchain
+WALLET_TEST_MODE = os.getenv('WALLET_TEST_MODE', 'True').lower() == 'true'
+
+# Verify DEFAULT_XPUB was loaded (for debugging)
+if DEFAULT_XPUB:
+    print(f"✓ DEFAULT_XPUB loaded (length: {len(DEFAULT_XPUB)})")
+else:
+    print("⚠ DEFAULT_XPUB not set - wallet address derivation will fail")
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -178,6 +280,32 @@ USE_I18N = True
 
 USE_TZ = True
 
+
+# Cache configuration (for exchange rates)
+# Using Redis for better performance and shared cache across processes
+# Falls back to local memory cache if Redis is not available
+REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
+USE_REDIS = os.getenv('USE_REDIS', 'True').lower() == 'true'
+
+if USE_REDIS:
+    # Use Redis cache backend (Django will handle connection errors gracefully)
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+            'KEY_PREFIX': 'global_banker',
+            'TIMEOUT': 10,  # 10 seconds default (for exchange rates)
+        }
+    }
+else:
+    # Use local memory cache (works without Redis)
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+            'TIMEOUT': 10,  # 10 seconds default (for exchange rates)
+        }
+    }
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/

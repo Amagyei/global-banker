@@ -46,25 +46,43 @@ class LoginView(APIView):
 
     def post(self, request):
         # TODO(verif): Validate Proof-of-Work (client puzzle) token for login throttling/anti-abuse.
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Debug logging (note: can't access request.body after request.data is accessed)
+        logger.info(f"Login request received. Content-Type: {request.content_type}")
+        logger.info(f"Request data: {request.data}")
+        
         serializer = LoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
+        if not serializer.is_valid():
+            logger.error(f"Serializer validation failed: {serializer.errors}")
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
         email = serializer.validated_data['email']
         password = serializer.validated_data['password']
+        
+        logger.info(f"Attempting login for email: {email}")
 
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
+            logger.warning(f"Login failed: User not found for email: {email}")
             return Response(
                 {'detail': 'Invalid email or password.'},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
         if not user.check_password(password):
+            logger.warning(f"Login failed: Invalid password for email: {email}")
             return Response(
                 {'detail': 'Invalid email or password.'},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+        
+        logger.info(f"Login successful for email: {email}")
 
         # Generate JWT tokens
         refresh = RefreshToken.for_user(user)

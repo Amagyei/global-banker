@@ -3,6 +3,9 @@ from .models import Wallet, CryptoNetwork, DepositAddress, TopUpIntent, OnChainT
 
 
 class CryptoNetworkSerializer(serializers.ModelSerializer):
+    # Use effective testnet status (respects WALLET_TEST_MODE)
+    is_testnet = serializers.SerializerMethodField()
+    
     class Meta:
         model = CryptoNetwork
         fields = [
@@ -15,6 +18,10 @@ class CryptoNetworkSerializer(serializers.ModelSerializer):
             'is_active',
             'required_confirmations',
         ]
+    
+    def get_is_testnet(self, obj):
+        """Return effective testnet status (respects WALLET_TEST_MODE)"""
+        return obj.effective_is_testnet
 
 
 class DepositAddressSerializer(serializers.ModelSerializer):

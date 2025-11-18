@@ -2,9 +2,12 @@
 Blockchain monitoring and transaction verification using Blockstream Esplora API
 """
 import requests
+import logging
 from django.conf import settings
 from django.utils import timezone
 from decimal import Decimal
+
+logger = logging.getLogger(__name__)
 
 
 class BlockchainMonitor:
@@ -12,7 +15,8 @@ class BlockchainMonitor:
     
     def __init__(self, network):
         self.network = network
-        self.base_url = network.explorer_api_url.rstrip('/')
+        # Use effective explorer API URL (respects WALLET_TEST_MODE)
+        self.base_url = network.effective_explorer_api_url.rstrip('/')
         self.timeout = 10
     
     def get_current_block_height(self):
@@ -27,18 +31,36 @@ class BlockchainMonitor:
                 response = requests.get(f"{self.base_url}/blocks/tip/height", timeout=self.timeout)
                 return int(response.text)
         except Exception as e:
-            print(f"Error getting block height: {e}")
+            logger.error(f"Error getting block height: {e}")
             return None
     
     def get_address_transactions(self, address):
         """Get all transactions for an address"""
         try:
-            if 'blockstream' in self.base_url.lower():
-                # Blockstream Esplora API
-                response = requests.get(
-                    f"{self.base_url}/address/{address}/txs",
-                    timeout=self.timeout
-                )
+            # Detect testnet address by prefix (tb1 for testnet bech32)
+            is_testnet_address = address.startswith('tb1') or address.startswith('2') or address.startswith('m') or address.startswith('n')
+            # Use effective testnet status (respects WALLET_TEST_MODE), but also check address format
+            use_testnet = self.network.effective_is_testnet or is_testnet_address
+            
+            # Blockstream Esplora API - use testnet endpoint if needed
+            if 'blockstream' in self.base_url.lower() or 'esplora' in self.base_url.lower():
+                # For testnet, use testnet API endpoint
+                if use_testnet:
+                    # Use testnet API - Blockstream format is /testnet/api
+                    if '/testnet/api' not in self.base_url:
+                        # Replace mainnet API with testnet
+                        testnet_url = self.base_url.replace('/api', '/testnet/api')
+                        if '/testnet/api' not in testnet_url:
+                            # If no /api in URL, add /testnet/api
+                            testnet_url = f"{self.base_url.rstrip('/')}/testnet/api"
+                    else:
+                        testnet_url = self.base_url
+                    api_url = f"{testnet_url}/address/{address}/txs"
+                else:
+                    api_url = f"{self.base_url}/address/{address}/txs"
+                
+                logger.info(f"Checking {address} on {'testnet' if use_testnet else 'mainnet'} API: {api_url}")
+                response = requests.get(api_url, timeout=self.timeout)
                 response.raise_for_status()
                 return response.json()
             else:
@@ -50,7 +72,10 @@ class BlockchainMonitor:
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            print(f"Error getting transactions for {address}: {e}")
+            logger.error(f"Error getting transactions for {address}: {e}")
+            logger.error(f"  URL attempted: {api_url if 'api_url' in locals() else 'unknown'}")
+            logger.error(f"  Network setting: {'testnet' if self.network.is_testnet else 'mainnet'}")
+            logger.error(f"  Address format: {'testnet' if is_testnet_address else 'mainnet'}")
             return []
     
     def get_transaction(self, txid):
@@ -60,7 +85,7 @@ class BlockchainMonitor:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"Error getting transaction {txid}: {e}")
+            logger.error(f"Error getting transaction {txid}: {e}")
             return None
     
     def inspect_transaction_for_address(self, txid, address):
@@ -120,6 +145,12 @@ class BlockchainMonitor:
         address = deposit_address.address
         network = deposit_address.network
         
+        # In test mode, simulate deposits for testing (only for mainnet)
+        # For testnet, always check real blockchain even in test mode
+        # Use effective_is_testnet to respect WALLET_TEST_MODE
+        if getattr(settings, 'WALLET_TEST_MODE', False) and not network.effective_is_testnet:
+            return self._simulate_test_deposit(deposit_address, topup_intent)
+        
         # Get transactions for this address
         txs = self.get_address_transactions(address)
         
@@ -149,9 +180,13 @@ class BlockchainMonitor:
             if confirmed and block_height is not None:
                 confirmations = self.compute_confirmations(block_height)
             
-            # Convert to minor units (assuming 1 sat = 0.0001 USD for BTC, adjust as needed)
-            # This is a placeholder - you'd need real exchange rate API
-            amount_minor = int(total_received * 0.0001 * 100)  # Rough conversion
+            # Convert to USD minor units using exchange rate API
+            from .exchange_rates import convert_crypto_to_usd
+            amount_minor = convert_crypto_to_usd(
+                total_received,
+                network.native_symbol,
+                network.decimals
+            )
             
             # Determine status
             required_conf = network.required_confirmations
@@ -220,4 +255,84 @@ class BlockchainMonitor:
             found_transaction = True
         
         return found_transaction
+    
+    def _simulate_test_deposit(self, deposit_address, topup_intent=None):
+        """
+        Simulate a deposit in test mode for development/testing.
+        This allows testing the wallet flow without real blockchain transactions.
+        """
+        from .models import OnChainTransaction, TopUpIntent, Wallet
+        from transactions.models import Transaction
+        
+        # Only simulate if there's a pending top-up intent
+        if not topup_intent or topup_intent.status != 'pending':
+            return False
+        
+        # Check if we already simulated this
+        if OnChainTransaction.objects.filter(
+            topup_intent=topup_intent,
+            status='confirmed'
+        ).exists():
+            return False
+        
+        # Simulate transaction after a short delay (in real scenario, this would be immediate)
+        # For now, we'll create a simulated transaction
+        from .exchange_rates import convert_crypto_to_usd
+        
+        # Simulate receiving the expected amount in crypto
+        # Convert expected USD amount back to crypto for simulation
+        expected_usd = topup_intent.amount_minor / 100
+        # Use a rough rate to calculate crypto amount (this is just for simulation)
+        if topup_intent.network.native_symbol.upper() == 'BTC':
+            simulated_crypto_atomic = int(expected_usd / 50000 * 1e8)  # Rough BTC rate
+        elif topup_intent.network.native_symbol.upper() in ['ETH', 'ETHEREUM']:
+            simulated_crypto_atomic = int(expected_usd / 3000 * 1e18)  # Rough ETH rate
+        else:
+            simulated_crypto_atomic = topup_intent.amount_minor * 100  # Default
+        
+        # Create simulated on-chain transaction
+        onchain_tx = OnChainTransaction.objects.create(
+            user=deposit_address.user,
+            network=topup_intent.network,
+            tx_hash=f"test_tx_{topup_intent.id}_{timezone.now().timestamp()}",
+            from_address="test_sender_address",
+            to_address=deposit_address.address,
+            amount_atomic=simulated_crypto_atomic,
+            amount_minor=topup_intent.amount_minor,
+            confirmations=topup_intent.network.required_confirmations,
+            required_confirmations=topup_intent.network.required_confirmations,
+            status='confirmed',
+            occurred_at=timezone.now(),
+            raw={'test_mode': True},
+            topup_intent=topup_intent
+        )
+        
+        # Update top-up intent
+        topup_intent.status = 'succeeded'
+        topup_intent.save()
+        
+        # Credit user's wallet
+        wallet, _ = Wallet.objects.get_or_create(
+            user=deposit_address.user,
+            defaults={'currency_code': 'USD', 'balance_minor': 0}
+        )
+        wallet.balance_minor += topup_intent.amount_minor
+        wallet.save()
+        
+        # Create transaction record
+        Transaction.objects.create(
+            user=deposit_address.user,
+            direction='credit',
+            category='topup',
+            amount_minor=topup_intent.amount_minor,
+            currency_code='USD',
+            description=f'Crypto deposit via {topup_intent.network.name} (Test Mode)',
+            balance_after_minor=wallet.balance_minor,
+            status='completed',
+            related_topup_intent_id=topup_intent.id,
+            related_onchain_tx_id=onchain_tx.id,
+        )
+        
+        logger.info(f"Simulated deposit for top-up {topup_intent.id} in test mode")
+        return True
 

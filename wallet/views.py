@@ -3,6 +3,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction as db_transaction
 from django.utils import timezone
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import Wallet, CryptoNetwork, DepositAddress, TopUpIntent, OnChainTransaction
 from .serializers import (
@@ -94,16 +97,48 @@ class TopUpIntentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Create top-up intent
-        topup = create_topup_intent(
-            user=request.user,
-            amount_minor=amount_minor,
-            network=network,
-            ttl_minutes=ttl_minutes
-        )
-        
-        serializer = self.get_serializer(topup)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Create top-up intent with transaction handling
+        # The create_topup_intent function already uses atomic transactions,
+        # but we wrap it here for additional safety and error handling
+        try:
+            with db_transaction.atomic():
+                topup = create_topup_intent(
+                    user=request.user,
+                    amount_minor=amount_minor,
+                    network=network,
+                    ttl_minutes=ttl_minutes
+                )
+            
+            serializer = self.get_serializer(topup)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            # Handle xpub configuration errors and other validation errors
+            # Log full error details for backend debugging
+            error_msg = str(e)
+            logger.error(f"Top-up creation failed: {error_msg}", exc_info=True)
+            
+            # Return user-friendly error message (hide technical details)
+            if 'xpub' in error_msg.lower() or 'DEFAULT_XPUB' in error_msg:
+                # Configuration error - don't expose technical details to user
+                user_message = "There was a problem creating the payment. Please contact support."
+            else:
+                # Other validation errors - can be more specific but still user-friendly
+                user_message = "There was a problem creating the payment. Please check your input and try again."
+            
+            return Response(
+                {'detail': user_message},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            # Handle other errors (e.g., database constraints, race conditions)
+            # Log full error details for backend debugging
+            logger.error(f"Unexpected error creating top-up: {e}", exc_info=True)
+            
+            # Return generic user-friendly error message
+            return Response(
+                {'detail': 'There was a problem creating the payment. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=True, methods=['post'])
     def check_status(self, request, pk=None):

@@ -18,3 +18,9 @@ uvicorn==0.38.0
 gunicorn==23.0.0
 python-dotenv==1.0.1
 dj-database-url==2.1.0
+
+# Wallet dependencies
+bip-utils>=2.9.0  # For BIP84 native segwit derivation (primary)
+hdwallet>=2.2.1  # HD wallet address derivation (fallback)
+base58>=2.1.1  # For zpub to xpub conversion (required for BIP84)
+django-redis>=5.4.0  # For Redis cache backend

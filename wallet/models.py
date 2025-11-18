@@ -1,5 +1,8 @@
 import uuid
 from django.db import models
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from datetime import timedelta
@@ -42,8 +45,47 @@ class CryptoNetwork(models.Model):
         ordering = ['name']
 
     def __str__(self):
-        net = "testnet" if self.is_testnet else "mainnet"
+        net = "testnet" if self.effective_is_testnet else "mainnet"
         return f"{self.name} ({net})"
+    
+    @property
+    def effective_is_testnet(self):
+        """
+        Returns the effective testnet status, respecting WALLET_TEST_MODE.
+        If WALLET_TEST_MODE is enabled, always returns True (testnet).
+        """
+        test_mode = getattr(settings, 'WALLET_TEST_MODE', False)
+        if test_mode:
+            return True  # Always use testnet in test mode
+        return self.is_testnet
+    
+    @property
+    def effective_explorer_api_url(self):
+        """
+        Returns the effective explorer API URL based on testnet status.
+        """
+        if self.effective_is_testnet and not self.is_testnet:
+            # WALLET_TEST_MODE is forcing testnet, use testnet API
+            if 'blockstream' in self.explorer_api_url.lower() and '/testnet' not in self.explorer_api_url.lower():
+                return 'https://blockstream.info/testnet/api'
+        return self.explorer_api_url
+    
+    def save(self, *args, **kwargs):
+        # Auto-configure testnet based on WALLET_TEST_MODE
+        test_mode = getattr(settings, 'WALLET_TEST_MODE', False)
+        if test_mode and not self.is_testnet:
+            # Force testnet if WALLET_TEST_MODE is enabled
+            self.is_testnet = True
+            # Update explorer URLs for testnet
+            if 'blockstream' in self.explorer_api_url.lower() and '/testnet' not in self.explorer_api_url.lower():
+                self.explorer_api_url = 'https://blockstream.info/testnet/api'
+                self.explorer_url = 'https://blockstream.info/testnet'
+        elif not test_mode and self.is_testnet and self.key == 'btc':
+            # For mainnet, update URLs if needed
+            if 'blockstream' in self.explorer_api_url.lower() and '/testnet' in self.explorer_api_url.lower():
+                self.explorer_api_url = 'https://blockstream.info/api'
+                self.explorer_url = 'https://blockstream.info'
+        super().save(*args, **kwargs)
 
 
 class Wallet(models.Model):
