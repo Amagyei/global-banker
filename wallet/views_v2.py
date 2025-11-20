@@ -109,7 +109,7 @@ class TopUpIntentV2ViewSet(viewsets.ModelViewSet):
                 # Construct callback URL from request
                 scheme = request.scheme
                 host = request.get_host()
-                callback_url = f"{scheme}://{host}/api/v2/wallet/oxapay/webhook/"
+                callback_url = f"{scheme}://{host}/api/v2/wallet/webhook/"
             
             # Determine payment currency
             # For tokens (USDT, USDC), use the token symbol directly as pay_currency
@@ -256,7 +256,7 @@ class TopUpIntentV2ViewSet(viewsets.ModelViewSet):
             
             return Response({
                 'topup': serializer.data,
-                'oxapay_payment': oxa_serializer.data
+                'payment': oxa_serializer.data
             }, status=status.HTTP_201_CREATED)
             
         except ValueError as e:
@@ -360,7 +360,7 @@ class OxaPayStaticAddressViewSet(viewsets.ModelViewSet):
             if not callback_url:
                 scheme = request.scheme
                 host = request.get_host()
-                callback_url = f"{scheme}://{host}/api/v2/wallet/oxapay/webhook/"
+                callback_url = f"{scheme}://{host}/api/v2/wallet/webhook/"
             
             # Map network key to OXA Pay network name (for static addresses)
             network_map_static = {
@@ -461,7 +461,7 @@ class OxaPayInvoiceViewSet(viewsets.ViewSet):
                 if not callback_url:
                     scheme = request.scheme
                     host = request.get_host()
-                    callback_url = f"{scheme}://{host}/api/v2/wallet/oxapay/webhook/"
+                    callback_url = f"{scheme}://{host}/api/v2/wallet/webhook/"
             
             # Generate invoice
             invoice_data = oxa_client.generate_invoice(

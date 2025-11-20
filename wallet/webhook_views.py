@@ -54,7 +54,7 @@ def webhook_status(request):
         ).count()
         
         return Response({
-            'webhook_endpoint': '/api/v2/wallet/oxapay/webhook/',
+            'webhook_endpoint': '/api/v2/wallet/webhook/',
             'status': 'active',
             'last_24_hours': {
                 'total_payments': recent_payments.count(),
@@ -199,7 +199,7 @@ def test_webhook(request):
         from django.test import RequestFactory
         factory = RequestFactory()
         mock_request = factory.post(
-            '/api/v2/wallet/oxapay/webhook/',
+            '/api/v2/wallet/webhook/',
             data=json.dumps(sample_payload),
             content_type='application/json',
             HTTP_HMAC='test_signature'  # Will fail verification but that's OK for testing

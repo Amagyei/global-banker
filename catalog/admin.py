@@ -1,6 +1,22 @@
 from django.contrib import admin
-from .models import Country, Bank, Account
+from .models import Country, Bank, Account, fullz, FullzPackage
 
+
+@admin.register(fullz)
+class FullzAdmin(admin.ModelAdmin):
+    list_display = ('name', 'ssn', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'email', 'driver_license', 'description', 'is_active', 'created_at', 'updated_at')
+    list_filter = ('is_active', 'created_at', 'updated_at')
+    search_fields = ('name', 'ssn', 'dob', 'address', 'city', 'state', 'zip', 'phone', 'email', 'driver_license', 'description')
+    list_select_related = ('bank', 'bank__country')
+    readonly_fields = ('created_at', 'updated_at')
+
+@admin.register(FullzPackage)
+class FullzPackageAdmin(admin.ModelAdmin):
+    list_display = ('name', 'description', 'quantity', 'price_minor', 'is_active', 'created_at', 'updated_at')
+    list_filter = ('is_active', 'created_at', 'updated_at')
+    search_fields = ('name', 'description')
+    list_select_related = ('bank', 'bank__country')
+    readonly_fields = ('created_at', 'updated_at') 
 
 @admin.register(Country)
 class CountryAdmin(admin.ModelAdmin):
@@ -34,4 +50,6 @@ class AccountAdmin(admin.ModelAdmin):
         return obj.bank.country.currency_code
     get_currency_code.short_description = 'Currency'
     get_currency_code.admin_order_field = 'bank__country__currency_code'
+
+
 
