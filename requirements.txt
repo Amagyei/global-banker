@@ -24,3 +24,6 @@ bip-utils>=2.9.0  # For BIP84 native segwit derivation (primary)
 hdwallet>=2.2.1  # HD wallet address derivation (fallback)
 base58>=2.1.1  # For zpub to xpub conversion (required for BIP84)
 django-redis>=5.4.0  # For Redis cache backend
+cryptography>=41.0.0  # For private key encryption (AES-256)
+bit>=0.8.0  # For Bitcoin transaction creation and broadcasting
+pycryptodome>=3.19.0  # For Keccak-256 hash (Ethereum address derivation)

@@ -23,5 +23,6 @@ urlpatterns = [
     path('api/catalog/', include('catalog.urls')),
     path('api/', include('transactions.urls')),
     path('api/', include('orders.urls')),
-    path('api/wallet/', include('wallet.urls')),
+    path('api/wallet/', include('wallet.urls')),  # v1 - non-custodial
+    path('api/v2/wallet/', include('wallet.urls_v2')),  # v2 - OXA Pay integration
 ]

@@ -40,6 +40,8 @@ class Transaction(models.Model):
     related_order_id = models.UUIDField(null=True, blank=True)  # Order ID (will be FK later)
     related_topup_intent_id = models.UUIDField(null=True, blank=True)  # TopUpIntent ID (will be FK later)
     related_onchain_tx_id = models.UUIDField(null=True, blank=True)  # OnChainTransaction ID (will be FK later)
+    sweep_tx_hash = models.CharField(max_length=128, null=True, blank=True)  # Sweep transaction hash (user → hot wallet)
+    consolidation_tx_hash = models.CharField(max_length=128, null=True, blank=True)  # Consolidation transaction hash (hot → cold wallet)
     idempotency_key = models.CharField(max_length=100, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

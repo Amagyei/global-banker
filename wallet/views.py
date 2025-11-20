@@ -71,7 +71,6 @@ class TopUpIntentViewSet(viewsets.ModelViewSet):
         """Create a new top-up intent"""
         amount_minor = request.data.get('amount_minor')
         network_id = request.data.get('network_id')
-        ttl_minutes = int(request.data.get('ttl_minutes', 30))
         
         if not amount_minor or not network_id:
             return Response(
@@ -105,8 +104,7 @@ class TopUpIntentViewSet(viewsets.ModelViewSet):
                 topup = create_topup_intent(
                     user=request.user,
                     amount_minor=amount_minor,
-                    network=network,
-                    ttl_minutes=ttl_minutes
+                    network=network
                 )
             
             serializer = self.get_serializer(topup)

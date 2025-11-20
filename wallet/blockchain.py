@@ -157,6 +157,9 @@ class BlockchainMonitor:
         if not txs:
             return False
         
+        # First, update existing pending transactions with new confirmation counts
+        self._update_pending_transactions(deposit_address)
+        
         # Process each transaction
         found_transaction = False
         
@@ -166,7 +169,11 @@ class BlockchainMonitor:
                 continue
             
             # Check if we already processed this transaction
-            if OnChainTransaction.objects.filter(tx_hash=txid).exists():
+            existing_tx = OnChainTransaction.objects.filter(tx_hash=txid).first()
+            if existing_tx:
+                # Update existing transaction with latest data
+                self._update_existing_transaction(existing_tx, tx_data, address, topup_intent)
+                found_transaction = True
                 continue
             
             # Inspect transaction
@@ -222,39 +229,171 @@ class BlockchainMonitor:
             
             # Update TopUpIntent if provided and amount matches
             if topup_intent and status == 'confirmed':
-                # Check if amount is sufficient (within 1% tolerance)
-                expected_minor = topup_intent.amount_minor
-                if abs(amount_minor - expected_minor) / expected_minor <= 0.01:
-                    topup_intent.status = 'succeeded'
-                    topup_intent.save()
-                    
-                    # Credit user's wallet
-                    from .models import Wallet
-                    wallet, _ = Wallet.objects.get_or_create(
-                        user=deposit_address.user,
-                        defaults={'currency_code': 'USD', 'balance_minor': 0}
-                    )
-                    wallet.balance_minor += amount_minor
-                    wallet.save()
-                    
-                    # Create transaction record
-                    from transactions.models import Transaction
-                    Transaction.objects.create(
-                        user=deposit_address.user,
-                        direction='credit',
-                        category='topup',
-                        amount_minor=amount_minor,
-                        currency_code='USD',
-                        description=f'Crypto deposit via {network.name}',
-                        balance_after_minor=wallet.balance_minor,
-                        status='completed',
-                        related_topup_intent_id=topup_intent.id,
-                        related_onchain_tx_id=onchain_tx.id,
-                    )
+                # Process the confirmed transaction (credits wallet, creates transaction record)
+                self._process_confirmed_transaction(onchain_tx)
             
             found_transaction = True
         
         return found_transaction
+    
+    def _update_pending_transactions(self, deposit_address):
+        """
+        Update existing pending transactions for this deposit address with new confirmation counts.
+        This ensures transactions that were pending get updated as confirmations increase.
+        """
+        from .models import OnChainTransaction
+        
+        # Get all pending transactions for this address
+        pending_txs = OnChainTransaction.objects.filter(
+            to_address=deposit_address.address,
+            status='pending',
+            network=deposit_address.network
+        )
+        
+        for pending_tx in pending_txs:
+            try:
+                # Get latest transaction data from blockchain
+                tx_data = self.get_transaction(pending_tx.tx_hash)
+                if not tx_data:
+                    continue
+                
+                # Update confirmations
+                status = tx_data.get('status', {})
+                confirmed = status.get('confirmed', False)
+                block_height = status.get('block_height')
+                
+                if confirmed and block_height is not None:
+                    confirmations = self.compute_confirmations(block_height)
+                    pending_tx.confirmations = confirmations
+                    pending_tx.updated_at = timezone.now()
+                    
+                    # Update status if enough confirmations
+                    if confirmations >= pending_tx.required_confirmations:
+                        pending_tx.status = 'confirmed'
+                        logger.info(f"Transaction {pending_tx.tx_hash[:20]}... confirmed with {confirmations} confirmations")
+                        
+                        # Process the confirmed transaction
+                        self._process_confirmed_transaction(pending_tx)
+                    else:
+                        logger.debug(f"Transaction {pending_tx.tx_hash[:20]}... has {confirmations}/{pending_tx.required_confirmations} confirmations")
+                    
+                    pending_tx.save()
+            except Exception as e:
+                logger.error(f"Error updating pending transaction {pending_tx.tx_hash[:20]}...: {e}")
+    
+    def _update_existing_transaction(self, existing_tx, tx_data, address, topup_intent):
+        """
+        Update an existing transaction with latest blockchain data.
+        """
+        # Inspect transaction for latest data
+        total_received, confirmed, block_height = self.inspect_transaction_for_address(existing_tx.tx_hash, address)
+        
+        # Update confirmations
+        if confirmed and block_height is not None:
+            confirmations = self.compute_confirmations(block_height)
+            existing_tx.confirmations = confirmations
+            existing_tx.updated_at = timezone.now()
+            
+            # Update status if enough confirmations
+            if confirmations >= existing_tx.required_confirmations and existing_tx.status != 'confirmed':
+                existing_tx.status = 'confirmed'
+                logger.info(f"Transaction {existing_tx.tx_hash[:20]}... confirmed with {confirmations} confirmations")
+                
+                # Process the confirmed transaction
+                self._process_confirmed_transaction(existing_tx)
+            
+            existing_tx.save()
+    
+    def _process_confirmed_transaction(self, onchain_tx):
+        """
+        Process a confirmed transaction: update top-up intent, trigger sweep, credit wallet after sweep confirmation.
+        """
+        from .models import TopUpIntent, Wallet
+        from transactions.models import Transaction
+        from .sweep_service import SweepService
+        
+        # Get the top-up intent if it exists
+        topup_intent = onchain_tx.topup_intent
+        
+        # Check if amount matches (within 1% tolerance) if topup_intent exists
+        if topup_intent:
+            expected_minor = topup_intent.amount_minor
+            amount_minor = onchain_tx.amount_minor
+            
+            if abs(amount_minor - expected_minor) / expected_minor > 0.01:
+                logger.warning(f"Amount mismatch for top-up {topup_intent.id}: expected ${expected_minor/100:.2f}, got ${amount_minor/100:.2f}")
+                return
+            
+            # Update top-up intent
+            if topup_intent.status != 'succeeded':
+                topup_intent.status = 'succeeded'
+                topup_intent.save()
+                logger.info(f"Top-up intent {topup_intent.id} marked as succeeded")
+        
+        # Check if already swept
+        if hasattr(onchain_tx, 'sweep_transaction'):
+            sweep_tx = onchain_tx.sweep_transaction
+            # If sweep is confirmed, credit wallet
+            if sweep_tx.status == 'confirmed':
+                self._credit_wallet_after_sweep(onchain_tx, sweep_tx)
+            else:
+                logger.info(f"Sweep {sweep_tx.id} for transaction {onchain_tx.tx_hash} is {sweep_tx.status}, waiting for confirmation")
+            return
+        
+        # Trigger sweep to hot wallet
+        try:
+            sweep_service = SweepService()
+            sweep_tx = sweep_service.sweep_deposit(onchain_tx)
+            logger.info(f"Triggered sweep {sweep_tx.id} for transaction {onchain_tx.tx_hash}")
+            
+            # If sweep is immediately confirmed (unlikely but possible), credit wallet
+            if sweep_tx.status == 'confirmed':
+                self._credit_wallet_after_sweep(onchain_tx, sweep_tx)
+            else:
+                logger.info(f"Sweep {sweep_tx.id} broadcast, waiting for confirmation before crediting wallet")
+                
+        except Exception as e:
+            logger.error(f"Failed to sweep deposit for transaction {onchain_tx.tx_hash}: {e}")
+            # Don't credit wallet if sweep fails - funds are still in user address
+            # Admin can manually retry sweep later
+    
+    def _credit_wallet_after_sweep(self, onchain_tx, sweep_tx):
+        """
+        Credit user wallet after sweep is confirmed.
+        This ensures funds are in hot wallet before crediting user.
+        """
+        from .models import Wallet
+        from transactions.models import Transaction
+        
+        amount_minor = onchain_tx.amount_minor
+        
+        # Credit user's wallet
+        wallet, _ = Wallet.objects.get_or_create(
+            user=onchain_tx.user,
+            defaults={'currency_code': 'USD', 'balance_minor': 0}
+        )
+        
+        # Only credit if not already credited (check if transaction record exists)
+        if not Transaction.objects.filter(related_onchain_tx_id=onchain_tx.id).exists():
+            wallet.balance_minor += amount_minor
+            wallet.save()
+            logger.info(f"Credited ${amount_minor/100:.2f} to wallet for user {onchain_tx.user.email} after sweep confirmation")
+            
+            # Create transaction record with sweep tx hash
+            Transaction.objects.create(
+                user=onchain_tx.user,
+                direction='credit',
+                category='topup',
+                amount_minor=amount_minor,
+                currency_code='USD',
+                description=f'Crypto deposit via {onchain_tx.network.name}',
+                balance_after_minor=wallet.balance_minor,
+                status='completed',
+                related_topup_intent_id=onchain_tx.topup_intent.id if onchain_tx.topup_intent else None,
+                related_onchain_tx_id=onchain_tx.id,
+                sweep_tx_hash=sweep_tx.tx_hash,
+            )
+            logger.info(f"Created transaction record for on-chain transaction {onchain_tx.id} with sweep {sweep_tx.tx_hash}")
     
     def _simulate_test_deposit(self, deposit_address, topup_intent=None):
         """

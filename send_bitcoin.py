@@ -258,11 +258,26 @@ def send_bitcoin(wif_key, to_address, usd_amount, network='testnet'):
         traceback.print_exc()
 
 if __name__ == '__main__':
-    # Default values from user's request
+    # User's request: Send $10 USD from testnet wallet to address
     wif_key = "cVn9pUq3bLWadJZ4JZVLoGPWnxZ1Pg5ayZ35yX5KGPRrFwrygHqW"
-    to_address = "tb1qtsgxt956r02czvtyqqq9tr4qvcc40s258nf5vu"
-    usd_amount = 20.0
-    network = 'testnet'  # Address starts with 'tb1' which is testnet
+    to_address = "bc1qqkc4eel5ujd6vexturqrtnn2pnhtep0yqsz0p0"  # User specified address
+    usd_amount = 10.0
+    
+    # Detect network from destination address
+    if to_address.startswith('bc1') or to_address.startswith('1') or to_address.startswith('3'):
+        network = 'mainnet'
+        print("⚠️  WARNING: Destination is MAINNET but source is TESTNET!")
+        print("   Cannot send from testnet to mainnet.")
+        print("   Please use a testnet address (starts with tb1, m, n, or 2)")
+        print()
+        print("If you want to send to a testnet address, use:")
+        print("  python send_bitcoin.py <testnet_address> 10.0")
+        sys.exit(1)
+    elif to_address.startswith('tb1') or to_address.startswith('m') or to_address.startswith('n') or to_address.startswith('2'):
+        network = 'testnet'
+    else:
+        print("⚠️  Unknown address format. Assuming testnet...")
+        network = 'testnet'
     
     if len(sys.argv) > 1:
         to_address = sys.argv[1]
@@ -270,6 +285,8 @@ if __name__ == '__main__':
         usd_amount = float(sys.argv[2])
     if len(sys.argv) > 3:
         wif_key = sys.argv[3]
+    if len(sys.argv) > 4:
+        network = sys.argv[4]
     
     send_bitcoin(wif_key, to_address, usd_amount, network)
 

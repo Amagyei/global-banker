@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Country, Bank, Account
+from .models import Country, Bank, Account, fullz, FullzPackage
 
 
 class CountrySerializer(serializers.ModelSerializer):
@@ -81,3 +81,79 @@ class AccountSerializer(serializers.ModelSerializer):
         # All prices are in USD regardless of account currency
         return f"${obj.price_minor / 100:.2f}"
 
+
+class FullzPackageSerializer(serializers.ModelSerializer):
+    bank_id = serializers.UUIDField(source='bank.id', read_only=True)
+    bank_name = serializers.CharField(source='bank.name', read_only=True)
+    country_code = serializers.SerializerMethodField()
+    country_name = serializers.SerializerMethodField()
+    price = serializers.SerializerMethodField()  # Format price as USD string
+
+    class Meta:
+        model = FullzPackage
+        fields = [
+            'id',
+            'name',
+            'description',
+            'quantity',
+            'price',
+            'price_minor',
+            'bank_id',
+            'bank_name',
+            'country_code',
+            'country_name',
+            'is_active',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_country_code(self, obj):
+        """Get country code from bank's country"""
+        return obj.bank.country.code
+
+    def get_country_name(self, obj):
+        """Get country name from bank's country"""
+        return obj.bank.country.name
+
+    def get_price(self, obj):
+        """Format price as currency string - ALWAYS USD for sales"""
+        return f"${obj.price_minor / 100:.2f}"
+
+
+class FullzSerializer(serializers.ModelSerializer):
+    bank_id = serializers.UUIDField(source='bank.id', read_only=True)
+    bank_name = serializers.CharField(source='bank.name', read_only=True)
+    country_code = serializers.SerializerMethodField()
+    country_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = fullz
+        fields = [
+            'id',
+            'name',
+            'ssn',
+            'dob',
+            'address',
+            'city',
+            'state',
+            'zip',
+            'phone',
+            'email',
+            'driver_license',
+            'description',
+            'bank_id',
+            'bank_name',
+            'country_code',
+            'country_name',
+            'is_active',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_country_code(self, obj):
+        """Get country code from bank's country"""
+        return obj.bank.country.code
+
+    def get_country_name(self, obj):
+        """Get country name from bank's country"""
+        return obj.bank.country.name

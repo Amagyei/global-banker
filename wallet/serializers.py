@@ -1,10 +1,15 @@
 from rest_framework import serializers
-from .models import Wallet, CryptoNetwork, DepositAddress, TopUpIntent, OnChainTransaction
+from .models import (
+    Wallet, CryptoNetwork, DepositAddress, TopUpIntent, OnChainTransaction,
+    OxaPayPayment, OxaPayStaticAddress
+)
 
 
 class CryptoNetworkSerializer(serializers.ModelSerializer):
     # Use effective testnet status (respects WALLET_TEST_MODE)
     is_testnet = serializers.SerializerMethodField()
+    # Expose actual database is_testnet value (for OXA Pay filtering)
+    db_is_testnet = serializers.BooleanField(source='is_testnet', read_only=True)
     
     class Meta:
         model = CryptoNetwork
@@ -15,6 +20,7 @@ class CryptoNetworkSerializer(serializers.ModelSerializer):
             'native_symbol',
             'decimals',
             'is_testnet',
+            'db_is_testnet',
             'is_active',
             'required_confirmations',
         ]
@@ -88,7 +94,6 @@ class TopUpIntentSerializer(serializers.ModelSerializer):
     amount = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     qr_code_data = serializers.SerializerMethodField()
-    expires_in_minutes = serializers.SerializerMethodField()
 
     class Meta:
         model = TopUpIntent
@@ -102,8 +107,6 @@ class TopUpIntentSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'qr_code_data',
-            'expires_in_minutes',
-            'expires_at',
             'created_at',
             'updated_at',
         ]
@@ -115,6 +118,11 @@ class TopUpIntentSerializer(serializers.ModelSerializer):
 
     def get_qr_code_data(self, obj):
         """Generate QR code data URI for deposit address"""
+        # For OXA Pay, deposit_address may be None (address comes from OXA Pay)
+        if not obj.deposit_address:
+            # Return None - OXA Pay provides QR code separately
+            return None
+        
         # Format: network:address?amount=...
         network = obj.network
         address = obj.deposit_address.address
@@ -127,14 +135,6 @@ class TopUpIntentSerializer(serializers.ModelSerializer):
             return f"ethereum:{address}"
         else:
             return address
-
-    def get_expires_in_minutes(self, obj):
-        """Calculate minutes until expiration"""
-        from django.utils import timezone
-        if obj.expires_at:
-            delta = obj.expires_at - timezone.now()
-            return max(0, int(delta.total_seconds() / 60))
-        return 0
 
 
 class WalletSerializer(serializers.ModelSerializer):
@@ -161,4 +161,82 @@ class WalletSerializer(serializers.ModelSerializer):
     def get_pending(self, obj):
         """Format pending as currency string"""
         return f"${obj.pending_minor / 100:.2f}"
+
+
+class OxaPayPaymentSerializer(serializers.ModelSerializer):
+    """Serializer for OXA Pay payment records"""
+    network = CryptoNetworkSerializer(read_only=True)
+    amount_display = serializers.SerializerMethodField()
+    pay_amount_display = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    is_expired = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OxaPayPayment
+        fields = [
+            'id',
+            'track_id',
+            'network',
+            'address',
+            'amount',
+            'amount_display',
+            'pay_amount',
+            'pay_amount_display',
+            'pay_currency',
+            'currency',
+            'status',
+            'status_display',
+            'qr_code',
+            'expired_at',
+            'is_expired',
+            'order_id',
+            'email',
+            'description',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'track_id', 'address', 'created_at', 'updated_at']
+
+    def get_amount_display(self, obj):
+        """Format amount in invoice currency"""
+        return f"{obj.amount} {obj.currency.upper()}"
+
+    def get_pay_amount_display(self, obj):
+        """Format payment amount in crypto currency"""
+        if obj.pay_amount:
+            return f"{obj.pay_amount} {obj.pay_currency.upper()}"
+        return None
+
+    def get_is_expired(self, obj):
+        """Check if payment is expired"""
+        from django.utils import timezone
+        if obj.expired_at:
+            # Handle both naive and aware datetimes
+            expired = obj.expired_at
+            if timezone.is_naive(expired):
+                expired = timezone.make_aware(expired)
+            return timezone.now() > expired
+        return False
+
+
+class OxaPayStaticAddressSerializer(serializers.ModelSerializer):
+    """Serializer for OXA Pay static addresses"""
+    network = CryptoNetworkSerializer(read_only=True)
+
+    class Meta:
+        model = OxaPayStaticAddress
+        fields = [
+            'id',
+            'track_id',
+            'network',
+            'address',
+            'qr_code',
+            'order_id',
+            'email',
+            'description',
+            'is_active',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'track_id', 'address', 'qr_code', 'created_at', 'updated_at']
 

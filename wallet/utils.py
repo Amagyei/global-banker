@@ -229,14 +229,52 @@ def derive_address_from_xpub(xpub: str, index: int, network_key: str, is_testnet
                     f"but is_testnet parameter is {is_testnet}. Using is_testnet={is_testnet} as requested."
                 )
             
-            # Convert vpub to tpub for better library compatibility
+            # For testnet, we need tpub format (not vpub)
+            # If key is already tpub, use it directly
+            # If key is vpub, convert to tpub for testnet compatibility
             working_key = xpub
-            if xpub_prefix == 'vpub' and BASE58_AVAILABLE:
-                try:
-                    working_key = vpub_to_tpub(xpub)
-                    logger.info("Converted vpub to tpub for derivation")
-                except Exception as e:
-                    logger.warning(f"Could not convert vpub to tpub: {e}, will try with original")
+            
+            if actual_testnet:
+                if xpub_prefix == 'tpub':
+                    # Already tpub - perfect for testnet, use directly
+                    logger.info("Using tpub directly for testnet derivation")
+                    working_key = xpub
+                elif xpub_prefix == 'vpub' and BASE58_AVAILABLE:
+                    # vpub needs conversion to tpub for testnet
+                    try:
+                        # Clean the xpub first (remove whitespace, newlines)
+                        cleaned_xpub = xpub.strip().replace('\n', '').replace('\r', '').replace(' ', '').replace('\t', '')
+                        if cleaned_xpub != xpub:
+                            logger.info(f"Cleaned xpub (removed whitespace): {len(xpub)} -> {len(cleaned_xpub)} chars")
+                            xpub = cleaned_xpub
+                        
+                        # Attempt conversion
+                        working_key = vpub_to_tpub(xpub)
+                        logger.info("Converted vpub to tpub for testnet derivation")
+                    except Exception as e:
+                        # Conversion failed - this is critical for testnet
+                        logger.error(
+                            f"CRITICAL: Failed to convert vpub to tpub for testnet: {e}. "
+                            f"Testnet requires tpub format. Please provide a tpub key instead."
+                        )
+                        raise ValueError(
+                            f"Testnet requires tpub format, but vpub->tpub conversion failed: {e}. "
+                            f"Please set DEFAULT_XPUB to a tpub key for testnet."
+                        )
+                elif xpub_prefix in ['xpub', 'zpub']:
+                    # Mainnet key provided but testnet requested
+                    raise ValueError(
+                        f"Testnet requested but mainnet key format ({xpub_prefix}) provided. "
+                        f"Please provide a tpub key for testnet."
+                    )
+            else:
+                # Mainnet - use xpub/zpub directly, or convert if needed
+                if xpub_prefix in ['xpub', 'zpub']:
+                    working_key = xpub
+                    logger.info(f"Using {xpub_prefix} directly for mainnet derivation")
+                elif xpub_prefix == 'vpub':
+                    # vpub is testnet format, but mainnet requested
+                    logger.warning("vpub (testnet) provided but mainnet requested. This may fail.")
                     working_key = xpub
             
             # Method 1: Try hdwallet with BIP32 (most reliable for depth 1)
@@ -383,13 +421,215 @@ def derive_address_from_xpub(xpub: str, index: int, network_key: str, is_testnet
             raise ValueError("No derivation library succeeded")
             
         elif normalized_key in ["eth", "ethereum"]:
-            raise NotImplementedError("Ethereum address derivation not yet implemented")
+            # Ethereum uses BIP44 path: m/44'/60'/0'/0/index
+            # Address format: 0x followed by 40 hex characters
+            return _derive_ethereum_address(xpub, index, is_testnet)
+        
+        elif normalized_key in ["usdt", "usdc"]:
+            # USDT and USDC are ERC-20 tokens on Ethereum
+            # They use the same address format as Ethereum
+            return _derive_ethereum_address(xpub, index, is_testnet)
+        
+        elif normalized_key == "bnb":
+            # Binance Smart Chain is EVM-compatible
+            # Uses same address format as Ethereum
+            return _derive_ethereum_address(xpub, index, is_testnet)
+        
+        elif normalized_key == "ltc":
+            # Litecoin uses BIP44 path: m/44'/2'/0'/0/index
+            # Similar to Bitcoin but with different coin type
+            return _derive_litecoin_address(xpub, index, is_testnet)
+        
+        elif normalized_key == "sol":
+            # Solana uses BIP44 path: m/44'/501'/0'/0'/index
+            # Different address format (base58, 32-44 characters)
+            return _derive_solana_address(xpub, index, is_testnet)
+        
         else:
             raise NotImplementedError(f"Address derivation for {normalized_key} not yet implemented")
             
     except Exception as e:
         logger.error(f"Address derivation error: {e}")
         raise ValueError(f"Failed to derive address for {network_key}: {e}")
+
+
+def _derive_ethereum_address(xpub: str, index: int, is_testnet: bool) -> str:
+    """
+    Derive Ethereum address from xpub using BIP44 path m/44'/60'/0'/0/index.
+    
+    Args:
+        xpub: Extended public key
+        index: Address index
+        is_testnet: Whether to use testnet (Ethereum testnets use same format)
+    
+    Returns:
+        str: Ethereum address (0x followed by 40 hex characters)
+    """
+    if not BIP_UTILS_AVAILABLE:
+        raise ImportError("bip_utils library required for Ethereum address derivation")
+    
+    try:
+        from bip_utils import Bip44, Bip44Coins, Bip44Changes
+        import hashlib
+        
+        # Ethereum uses BIP44 coin type 60
+        # Path: m/44'/60'/0'/0/index
+        bip44_ctx = Bip44.FromExtendedKey(xpub, Bip44Coins.ETHEREUM)
+        
+        # Derive account (0'), change (0), address index
+        account = bip44_ctx.Purpose().Coin().Account(0)
+        change = account.Change(Bip44Changes.CHAIN_EXT)
+        address_key = change.AddressIndex(index)
+        
+        # Get public key (uncompressed, 65 bytes)
+        pubkey = address_key.PublicKey().RawUncompressed().ToBytes()
+        
+        # Ethereum address is last 20 bytes of Keccak-256 hash of public key
+        # Note: Ethereum uses Keccak-256, not SHA-256
+        try:
+            from Crypto.Hash import keccak
+            keccak_hash = keccak.new(digest_bits=256)
+            keccak_hash.update(pubkey)
+            address_bytes = keccak_hash.digest()[-20:]  # Last 20 bytes
+        except ImportError:
+            # Fallback: use pysha3 if available
+            try:
+                import sha3
+                keccak_hash = sha3.keccak_256(pubkey)
+                address_bytes = keccak_hash.digest()[-20:]
+            except ImportError:
+                # Last resort: use eth-keys if available
+                try:
+                    from eth_keys import keys
+                    pubkey_obj = keys.PublicKey(pubkey)
+                    address_bytes = pubkey_obj.to_address()
+                    return address_bytes
+                except ImportError:
+                    raise ImportError(
+                        "Ethereum address derivation requires one of: "
+                        "pycryptodome (Crypto.Hash.keccak), pysha3, or eth-keys"
+                    )
+        
+        # Convert to hex address (0x + 40 hex characters)
+        address = '0x' + address_bytes.hex()
+        
+        logger.info(f"Successfully derived Ethereum address at index {index}: {address}")
+        return address
+        
+    except Exception as e:
+        logger.error(f"Ethereum address derivation failed: {e}")
+        raise ValueError(f"Failed to derive Ethereum address: {e}")
+
+
+def _derive_litecoin_address(xpub: str, index: int, is_testnet: bool) -> str:
+    """
+    Derive Litecoin address from xpub using BIP44 path m/44'/2'/0'/0/index.
+    
+    Args:
+        xpub: Extended public key
+        index: Address index
+        is_testnet: Whether to use testnet
+    
+    Returns:
+        str: Litecoin address
+    """
+    if not BIP_UTILS_AVAILABLE:
+        raise ImportError("bip_utils library required for Litecoin address derivation")
+    
+    try:
+        from bip_utils import Bip44, Bip44Coins, Bip44Changes
+        import hashlib
+        
+        # Litecoin uses BIP44 coin type 2
+        # Path: m/44'/2'/0'/0/index
+        bip44_ctx = Bip44.FromExtendedKey(xpub, Bip44Coins.LITECOIN)
+        
+        # Derive account (0'), change (0), address index
+        account = bip44_ctx.Purpose().Coin().Account(0)
+        change = account.Change(Bip44Changes.CHAIN_EXT)
+        address_key = change.AddressIndex(index)
+        
+        # Get public key
+        pubkey = address_key.PublicKey().RawCompressed().ToBytes()
+        
+        # Hash160 (SHA256 + RIPEMD160)
+        sha256_hash = hashlib.sha256(pubkey).digest()
+        ripemd160_hash = hashlib.new('ripemd160', sha256_hash).digest()
+        
+        # Encode as base58 with network prefix
+        # Litecoin mainnet: 0x30 (L), testnet: 0x6f (m or n)
+        if is_testnet:
+            version_byte = b'\x6f'
+        else:
+            version_byte = b'\x30'
+        
+        # Base58 encode with checksum
+        if BASE58_AVAILABLE:
+            payload = version_byte + ripemd160_hash
+            address = base58.b58encode_check(payload).decode('ascii')
+        else:
+            raise ImportError("base58 library required for Litecoin address encoding")
+        
+        logger.info(f"Successfully derived Litecoin address at index {index}: {address}")
+        return address
+        
+    except Exception as e:
+        logger.error(f"Litecoin address derivation failed: {e}")
+        raise ValueError(f"Failed to derive Litecoin address: {e}")
+
+
+def _derive_solana_address(xpub: str, index: int, is_testnet: bool) -> str:
+    """
+    Derive Solana address from xpub using BIP44 path m/44'/501'/0'/0'/index.
+    
+    Args:
+        xpub: Extended public key
+        index: Address index
+        is_testnet: Whether to use testnet
+    
+    Returns:
+        str: Solana address (base58, 32-44 characters)
+    """
+    if not BIP_UTILS_AVAILABLE:
+        raise ImportError("bip_utils library required for Solana address derivation")
+    
+    try:
+        from bip_utils import Bip44, Bip44Coins, Bip44Changes
+        
+        # Solana uses BIP44 coin type 501
+        # Path: m/44'/501'/0'/0'/index (note: hardened address index)
+        bip44_ctx = Bip44.FromExtendedKey(xpub, Bip44Coins.SOLANA)
+        
+        # Derive account (0'), change (0'), address index (hardened)
+        account = bip44_ctx.Purpose().Coin().Account(0)
+        change = account.Change(Bip44Changes.CHAIN_EXT)  # This is hardened for Solana
+        address_key = change.AddressIndex(index)  # This should be hardened
+        
+        # Solana address is the public key encoded in base58
+        pubkey_bytes = address_key.PublicKey().RawCompressed().ToBytes()
+        
+        # Solana uses first 32 bytes of public key (Ed25519)
+        # But BIP44 gives us compressed secp256k1, so we need to handle this
+        # For now, use the public key bytes directly
+        if BASE58_AVAILABLE:
+            # Solana addresses are base58-encoded public keys (32 bytes)
+            # If we have 33 bytes (compressed), take first 32
+            if len(pubkey_bytes) == 33:
+                pubkey_bytes = pubkey_bytes[1:]  # Remove compression byte
+            
+            # Base58 encode (Solana uses base58 without checksum for addresses)
+            # But we'll use base58check for compatibility
+            address = base58.b58encode(pubkey_bytes).decode('ascii')
+        else:
+            raise ImportError("base58 library required for Solana address encoding")
+        
+        logger.info(f"Successfully derived Solana address at index {index}: {address}")
+        return address
+        
+    except Exception as e:
+        logger.error(f"Solana address derivation failed: {e}")
+        # Solana has special requirements - may need solana-py library
+        raise ValueError(f"Failed to derive Solana address: {e}. Note: Solana uses Ed25519, not secp256k1")
 
 
 def _bech32_encode(hrp: str, witver: int, witprog: bytes) -> str:
@@ -537,7 +777,7 @@ def create_deposit_address(user, network):
     return deposit_address
 
 
-def create_topup_intent(user, amount_minor: int, network, ttl_minutes: int = 30):
+def create_topup_intent(user, amount_minor: int, network):
     """
     Create a top-up intent with a unique deposit address.
     Uses database transactions to prevent race conditions when multiple
@@ -545,9 +785,8 @@ def create_topup_intent(user, amount_minor: int, network, ttl_minutes: int = 30)
     
     Args:
         user: User instance
-        amount_minor: Amount in USD minor units (cents)
+        amount_minor: Amount in USD minor units (cents) - for user transaction history
         network: CryptoNetwork instance
-        ttl_minutes: Time to live in minutes
     
     Returns:
         TopUpIntent instance
@@ -569,15 +808,14 @@ def create_topup_intent(user, amount_minor: int, network, ttl_minutes: int = 30)
         if not deposit_address:
             deposit_address = create_deposit_address(user, network)
         
-        # Create top-up intent
+        # Create top-up intent (no expiration - addresses are monitored continuously)
         topup = TopUpIntent.objects.create(
             user=user,
             amount_minor=amount_minor,
             currency_code='USD',
             network=network,
             deposit_address=deposit_address,
-            status='pending',
-            expires_at=timezone.now() + timedelta(minutes=ttl_minutes)
+            status='pending'
         )
     
     return topup

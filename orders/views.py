@@ -96,7 +96,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         return Order.objects.filter(user=self.request.user).prefetch_related('items', 'items__account', 'items__account__bank', 'fulfillments')
 
     def create(self, request):
-        """Create order from cart"""
+        """Create order from cart
+        
+        If payment_method is 'oxapay', order is created with status 'pending' and 
+        will be marked as 'paid' when OXA Pay webhook confirms payment.
+        Otherwise, order is created and wallet is deducted immediately.
+        """
         from wallet.models import Wallet
         
         cart, _ = Cart.objects.get_or_create(user=request.user)
@@ -108,30 +113,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         if not recipient:
             return Response({'detail': 'Recipient information is required'}, status=status.HTTP_400_BAD_REQUEST)
         
+        payment_method = request.data.get('payment_method', 'wallet')  # 'wallet' or 'oxapay'
+        
         with db_transaction.atomic():
             # Calculate totals
             subtotal_minor = cart.total_minor
             fees_minor = 0  # No fees for now
             total_minor = subtotal_minor + fees_minor
             
-            # Check wallet balance
-            wallet, _ = Wallet.objects.get_or_create(
-                user=request.user,
-                defaults={'currency_code': 'USD', 'balance_minor': 0}
-            )
-            
-            if wallet.balance_minor < total_minor:
-                return Response(
-                    {
-                        'detail': 'Insufficient wallet balance',
-                        'required': total_minor / 100,
-                        'available': wallet.balance_minor / 100,
-                        'shortfall': (total_minor - wallet.balance_minor) / 100,
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Create order
+            # Create order (status will be 'pending' for oxapay, 'paid' for wallet)
             order = Order.objects.create(
                 user=request.user,
                 subtotal_minor=subtotal_minor,
@@ -139,7 +129,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 total_minor=total_minor,
                 currency_code=cart.currency_code,
                 recipient=recipient,
-                status='pending',
+                status='pending' if payment_method == 'oxapay' else 'pending',  # Will be updated
             )
             
             # Create order items
@@ -151,29 +141,51 @@ class OrderViewSet(viewsets.ModelViewSet):
                     unit_price_minor=cart_item.unit_price_minor,
                 )
             
-            # Deduct from wallet
-            wallet.balance_minor -= total_minor
-            wallet.save()
-            
-            # Create transaction (debit)
-            Transaction.objects.create(
-                user=request.user,
-                direction='debit',
-                category='purchase',
-                amount_minor=total_minor,
-                currency_code=cart.currency_code,
-                description=f'Order {order.order_number}',
-                balance_after_minor=wallet.balance_minor,
-                status='completed',  # Auto-complete since wallet has funds
-                related_order_id=order.id,
-            )
-            
-            # Mark order as paid
-            order.status = 'paid'
-            order.save()
-            
-            # Clear cart
-            cart.items.all().delete()
+            # If wallet payment, deduct immediately
+            if payment_method == 'wallet':
+                wallet, _ = Wallet.objects.get_or_create(
+                    user=request.user,
+                    defaults={'currency_code': 'USD', 'balance_minor': 0}
+                )
+                
+                if wallet.balance_minor < total_minor:
+                    return Response(
+                        {
+                            'detail': 'Insufficient wallet balance',
+                            'required': total_minor / 100,
+                            'available': wallet.balance_minor / 100,
+                            'shortfall': (total_minor - wallet.balance_minor) / 100,
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Deduct from wallet
+                wallet.balance_minor -= total_minor
+                wallet.save()
+                
+                # Create transaction (debit)
+                Transaction.objects.create(
+                    user=request.user,
+                    direction='debit',
+                    category='purchase',
+                    amount_minor=total_minor,
+                    currency_code=cart.currency_code,
+                    description=f'Order {order.order_number}',
+                    balance_after_minor=wallet.balance_minor,
+                    status='completed',
+                    related_order_id=order.id,
+                )
+                
+                # Mark order as paid
+                order.status = 'paid'
+                order.save()
+                
+                # Clear cart
+                cart.items.all().delete()
+            else:
+                # For OXA Pay, order stays 'pending' until webhook confirms payment
+                # Don't clear cart yet - will be cleared when payment is confirmed
+                pass
         
         serializer = OrderSerializer(order)
         return Response(serializer.data, status=status.HTTP_201_CREATED)

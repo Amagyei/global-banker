@@ -40,6 +40,53 @@ class Bank(models.Model):
     def __str__(self):
         return f"{self.name} ({self.country.code})"
 
+    
+class fullz(models.Model):
+    """Fullz model for fullz data"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    bank = models.ForeignKey(Bank, on_delete=models.CASCADE, related_name='fullzs')
+    name = models.CharField(max_length=200)
+    ssn = models.CharField(max_length=11)
+    dob = models.DateField()
+    address = models.CharField(max_length=200)
+    city = models.CharField(max_length=200)
+    state = models.CharField(max_length=200)
+    zip = models.CharField(max_length=10)
+    phone = models.CharField(max_length=15)
+    email = models.EmailField()
+    driver_license = models.TextField()
+    description = models.TextField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.name} - {self.email}"
+
+
+class FullzPackage(models.Model):
+    """Package model for selling fullz in bundles"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    bank = models.ForeignKey(Bank, on_delete=models.CASCADE, related_name='fullz_packages')
+    name = models.CharField(max_length=200)  # e.g., "Starter Pack", "Premium Bundle"
+    description = models.TextField()
+    quantity = models.PositiveIntegerField()  # Number of fullz in this package
+    price_minor = models.BigIntegerField()  # Price in minor units (cents)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['price_minor']
+        indexes = [
+            models.Index(fields=['bank', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} - {self.quantity} fullz - ${self.price_minor / 100:.2f}"
+
+    
+
 
 def generate_sku(bank_name: str, account_id: uuid.UUID) -> str:
     """Generate SKU from bank name and UUID"""

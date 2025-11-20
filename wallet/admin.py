@@ -7,6 +7,8 @@ from .models import (
     DepositAddress,
     TopUpIntent,
     OnChainTransaction,
+    OxaPayPayment,
+    OxaPayStaticAddress,
 )
 
 
@@ -79,7 +81,7 @@ class DepositAddressAdmin(admin.ModelAdmin):
 
 @admin.register(TopUpIntent)
 class TopUpIntentAdmin(admin.ModelAdmin):
-    list_display = ('user', 'get_amount', 'network', 'status', 'expires_at', 'created_at')
+    list_display = ('user', 'get_amount', 'network', 'status', 'created_at')
     list_filter = ('status', 'network', 'created_at')
     search_fields = ('user__email', 'deposit_address__address')
     list_select_related = ('user', 'network', 'deposit_address')
@@ -94,7 +96,7 @@ class TopUpIntentAdmin(admin.ModelAdmin):
             'fields': ('deposit_address',)
         }),
         ('Metadata', {
-            'fields': ('provider_ref', 'expires_at', 'id', 'created_at', 'updated_at'),
+            'fields': ('id', 'created_at', 'updated_at'),
             'classes': ('collapse',)
         }),
     )
@@ -162,3 +164,97 @@ class OnChainTransactionAdmin(admin.ModelAdmin):
     def get_amount_usd(self, obj):
         return f"${obj.amount_minor / 100:.2f}"
     get_amount_usd.short_description = 'Amount (USD)'
+
+
+@admin.register(OxaPayPayment)
+class OxaPayPaymentAdmin(admin.ModelAdmin):
+    list_display = (
+        'track_id_short',
+        'user',
+        'network',
+        'get_amount_display',
+        'status',
+        'created_at',
+    )
+    list_filter = ('status', 'network', 'pay_currency', 'created_at')
+    search_fields = ('track_id', 'user__email', 'address', 'order_id')
+    list_select_related = ('user', 'network', 'topup_intent')
+    readonly_fields = ('id', 'track_id', 'address', 'created_at', 'updated_at', 'raw_response')
+    date_hierarchy = 'created_at'
+
+    fieldsets = (
+        ('Payment Details', {
+            'fields': ('track_id', 'user', 'network', 'status')
+        }),
+        ('Amounts', {
+            'fields': ('amount', 'currency', 'pay_amount', 'pay_currency')
+        }),
+        ('Address', {
+            'fields': ('address', 'qr_code')
+        }),
+        ('Metadata', {
+            'fields': ('order_id', 'email', 'description', 'callback_url')
+        }),
+        ('Timing', {
+            'fields': ('expired_at',)
+        }),
+        ('Relations', {
+            'fields': ('topup_intent',),
+            'classes': ('collapse',)
+        }),
+        ('Raw Data', {
+            'fields': ('raw_response',),
+            'classes': ('collapse',)
+        }),
+        ('System', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def track_id_short(self, obj):
+        return f"{obj.track_id[:20]}..." if len(obj.track_id) > 20 else obj.track_id
+    track_id_short.short_description = 'Track ID'
+
+    def get_amount_display(self, obj):
+        return f"{obj.amount} {obj.currency.upper()} → {obj.pay_amount or 'N/A'} {obj.pay_currency.upper()}"
+    get_amount_display.short_description = 'Amount'
+
+
+@admin.register(OxaPayStaticAddress)
+class OxaPayStaticAddressAdmin(admin.ModelAdmin):
+    list_display = (
+        'address_short',
+        'user',
+        'network',
+        'is_active',
+        'created_at',
+    )
+    list_filter = ('network', 'is_active', 'created_at')
+    search_fields = ('track_id', 'user__email', 'address', 'order_id')
+    list_select_related = ('user', 'network')
+    readonly_fields = ('id', 'track_id', 'address', 'qr_code', 'created_at', 'updated_at', 'raw_response')
+
+    fieldsets = (
+        ('Address Details', {
+            'fields': ('track_id', 'user', 'network', 'address', 'is_active')
+        }),
+        ('QR Code', {
+            'fields': ('qr_code',)
+        }),
+        ('Metadata', {
+            'fields': ('order_id', 'email', 'description', 'callback_url')
+        }),
+        ('Raw Data', {
+            'fields': ('raw_response',),
+            'classes': ('collapse',)
+        }),
+        ('System', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def address_short(self, obj):
+        return f"{obj.address[:20]}...{obj.address[-10:]}"
+    address_short.short_description = 'Address'

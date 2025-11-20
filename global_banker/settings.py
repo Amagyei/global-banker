@@ -200,7 +200,7 @@ DEFAULT_XPUB = os.getenv('DEFAULT_XPUB', '')  # Set via environment variable in 
 
 # Test mode: Use mock addresses instead of real blockchain
 # Set to False in production when using real blockchain
-WALLET_TEST_MODE = os.getenv('WALLET_TEST_MODE', 'True').lower() == 'true'
+WALLET_TEST_MODE = os.getenv('WALLET_TEST_MODE', 'False').lower() == 'true'
 
 # Verify DEFAULT_XPUB was loaded (for debugging)
 if DEFAULT_XPUB:
