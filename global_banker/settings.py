@@ -153,9 +153,13 @@ REST_FRAMEWORK = {
 }
 
 # JWT Settings
+# Access token expires after 15 minutes
+# Refresh token also expires after 15 minutes to enforce inactivity timeout
+# Users will be logged out after 15 minutes of no activity
+# Note: Frontend automatically refreshes tokens on API calls, so active users stay logged in
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'REFRESH_TOKEN_LIFETIME': timedelta(minutes=15),  # Changed from 7 days to 15 minutes for inactivity timeout
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',

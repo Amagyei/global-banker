@@ -27,14 +27,17 @@ class Bank(models.Model):
     name = models.CharField(max_length=200)  # "Chase", "Bank of America", "Wells Fargo", etc.
     logo_url = models.URLField(blank=True)
     country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name='banks')
+    has_fullz = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    logs = models.TextField(blank=True, null=True)
 
     class Meta:
         ordering = ['name']
         indexes = [
             models.Index(fields=['country', 'is_active']),
+            models.Index(fields=['has_fullz', 'is_active']),
         ]
 
     def __str__(self):
@@ -107,6 +110,7 @@ class Account(models.Model):
     balance_minor = models.BigIntegerField()  # account balance in minor units (e.g., 77300 for $773.00)
     price_minor = models.BigIntegerField()  # selling price in minor units
     image_url = models.URLField(blank=True)
+    has_fullz = models.BooleanField(default=False)  # indicates if this account has fullz data available
     is_active = models.BooleanField(default=True)
     metadata = models.JSONField(default=dict, blank=True)  # additional product data
     created_at = models.DateTimeField(auto_now_add=True)

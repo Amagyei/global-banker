@@ -8,20 +8,20 @@ from .serializers import CountrySerializer, BankSerializer, AccountSerializer, F
 
 
 class CountryViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for listing countries - public access"""
+    """ViewSet for listing countries - authenticated access only"""
     queryset = Country.objects.all()
     serializer_class = CountrySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     filterset_fields = ['is_supported']
     search_fields = ['name', 'code']
 
 
 class BankViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for listing banks - public access"""
+    """ViewSet for listing banks - authenticated access only"""
     queryset = Bank.objects.select_related('country').all()
     serializer_class = BankSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
     filterset_fields = ['country', 'is_active']
     search_fields = ['name']
@@ -35,10 +35,10 @@ class BankViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class AccountViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for listing bank account products - public access"""
+    """ViewSet for listing bank account products - authenticated access only"""
     queryset = Account.objects.select_related('bank', 'bank__country').filter(is_active=True)
     serializer_class = AccountSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [filters.SearchFilter, DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['bank', 'is_active']
     search_fields = ['name', 'description', 'sku']
@@ -57,22 +57,21 @@ class AccountViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(bank_id=bank_id)
         
         # Exclude accounts that user has already purchased
-        if self.request.user.is_authenticated:
-            from orders.models import OrderItem
-            purchased_account_ids = OrderItem.objects.filter(
-                order__user=self.request.user,
-                order__status__in=['paid', 'delivered']  # Only exclude if order was paid/delivered
-            ).values_list('account_id', flat=True).distinct()
-            queryset = queryset.exclude(id__in=purchased_account_ids)
+        from orders.models import OrderItem
+        purchased_account_ids = OrderItem.objects.filter(
+            order__user=self.request.user,
+            order__status__in=['paid', 'delivered']  # Only exclude if order was paid/delivered
+        ).values_list('account_id', flat=True).distinct()
+        queryset = queryset.exclude(id__in=purchased_account_ids)
         
         return queryset
 
 
 class FullzViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for listing fullz products - public access"""
+    """ViewSet for listing fullz products - authenticated access only"""
     queryset = fullz.objects.select_related('bank', 'bank__country').filter(is_active=True)
     serializer_class = FullzSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [filters.SearchFilter, DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['bank', 'is_active']
     search_fields = ['name', 'description', 'email', 'ssn']
@@ -94,10 +93,10 @@ class FullzViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class FullzPackageViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for listing fullz packages - public access"""
+    """ViewSet for listing fullz packages - authenticated access only"""
     queryset = FullzPackage.objects.select_related('bank', 'bank__country').filter(is_active=True)
     serializer_class = FullzPackageSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [filters.SearchFilter, DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['bank', 'is_active']
     search_fields = ['name', 'description']

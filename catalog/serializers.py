@@ -21,6 +21,7 @@ class BankSerializer(serializers.ModelSerializer):
             'country_code',
             'country_name',
             'is_active',
+            'has_fullz',
             'created_at',
             'updated_at',
         ]
@@ -53,6 +54,7 @@ class AccountSerializer(serializers.ModelSerializer):
             'price_minor',
             'currency_code',
             'image_url',
+            'has_fullz',
             'is_active',
             'metadata',
             'created_at',

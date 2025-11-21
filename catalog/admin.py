@@ -27,8 +27,8 @@ class CountryAdmin(admin.ModelAdmin):
 
 @admin.register(Bank)
 class BankAdmin(admin.ModelAdmin):
-    list_display = ('name', 'country', 'is_active', 'created_at')
-    list_filter = ('country', 'is_active')
+    list_display = ('name', 'country', 'is_active', 'has_fullz', 'created_at')
+    list_filter = ('country', 'is_active', 'has_fullz')
     search_fields = ('name',)
     list_select_related = ('country',)
 

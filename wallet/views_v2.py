@@ -246,7 +246,7 @@ class TopUpIntentV2ViewSet(viewsets.ModelViewSet):
                     except Exception as e:
                         logger.error(f"OXA Pay payment creation failed: {e}", exc_info=True)
                         return Response(
-                            {'detail': 'Failed to create OXA Pay payment. Please try again.'},
+                            {'detail': 'Failed to create payment. Please try again or try another network'},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR
                         )
             
