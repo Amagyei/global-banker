@@ -23,7 +23,7 @@ class BankViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = BankSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
-    filterset_fields = ['country', 'is_active']
+    filterset_fields = ['country', 'is_active', 'has_fullz']
     search_fields = ['name']
 
     def get_queryset(self):

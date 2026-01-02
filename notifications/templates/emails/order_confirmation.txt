@@ -1,0 +1,15 @@
+Thank you for your purchase!
+
+Order Number: {{ order_number }}
+Date: {{ order_date }}
+
+Items:
+{{ items_list }}
+
+Total: ${{ total }}
+
+If you have any questions, please contact @mentor_kev on Telegram.
+
+
+
+

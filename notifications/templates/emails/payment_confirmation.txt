@@ -1,0 +1,33 @@
+{% if status == 'success' %}
+Your payment of ${{ amount }} USD has been confirmed and credited to your wallet.
+
+Payment Details:
+- Track ID: {{ track_id }}
+- Amount: ${{ amount }} USD
+- Currency: {{ currency }}
+- Transaction Hash: {{ tx_hash }}
+
+Your wallet balance has been updated. Thank you for your payment!
+{% elif status == 'failed' %}
+Your payment of ${{ amount }} USD has failed.
+
+Payment Details:
+- Track ID: {{ track_id }}
+- Amount: ${{ amount }} USD
+- Currency: {{ currency }}
+
+Please try again or contact support if you continue to experience issues.
+{% else %}
+Your payment of ${{ amount }} USD has expired.
+
+Payment Details:
+- Track ID: {{ track_id }}
+- Amount: ${{ amount }} USD
+- Currency: {{ currency }}
+
+Please create a new payment to complete your top-up.
+{% endif %}
+
+
+
+
