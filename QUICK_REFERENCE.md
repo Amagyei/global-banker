@@ -90,3 +90,9 @@ sudo fuser -k 8000/tcp
 - **Logs**: `sudo journalctl -u global-banker`
 - **Environment**: `/home/banker/banksite-1/global-banker/.env`
 
+
+
+
+
+
+

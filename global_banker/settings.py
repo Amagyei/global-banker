@@ -141,6 +141,7 @@ INSTALLED_APPS = [
     'transactions',
     'orders',
     'wallet',
+    'notifications',
 ]
 
 REST_FRAMEWORK = {
@@ -157,14 +158,18 @@ REST_FRAMEWORK = {
 # Refresh token also expires after 15 minutes to enforce inactivity timeout
 # Users will be logged out after 15 minutes of no activity
 # Note: Frontend automatically refreshes tokens on API calls, so active users stay logged in
+# Sliding-session controls (minutes of inactivity before frontend will log user out)
+SESSION_IDLE_TIMEOUT_MINUTES = int(os.getenv('SESSION_IDLE_TIMEOUT_MINUTES', '15'))
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
-    'REFRESH_TOKEN_LIFETIME': timedelta(minutes=15),  # Changed from 7 days to 15 minutes for inactivity timeout
+    'REFRESH_TOKEN_LIFETIME': timedelta(hours=int(os.getenv('REFRESH_TOKEN_HOURS', '12'))),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
+    'UPDATE_LAST_LOGIN': True,
 }
 
 # CORS Settings
@@ -321,3 +326,12 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Email Configuration
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@example.com')

@@ -10,7 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 from django.db import transaction as db_transaction
-from django.core.mail import send_mail
+# Email sending moved to notifications/services.py
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -201,6 +201,13 @@ def process_paid_payment(payment: OxaPayPayment, payload: dict):
                         order.status = 'paid'
                         order.save()
                         
+                        # Send order confirmation email to ALL confirmed purchases
+                        try:
+                            from notifications.services import send_order_confirmation_email
+                            send_order_confirmation_email(order)
+                        except Exception as e:
+                            logger.error(f"Failed to send order confirmation email for order {order.order_number}: {e}")
+                        
                         # Clear cart (items were already moved to order)
                         cart, _ = Cart.objects.get_or_create(user=payment.user)
                         cart.items.all().delete()
@@ -289,9 +296,10 @@ def process_paid_payment(payment: OxaPayPayment, payload: dict):
                     f"via OXA Pay payment {payment.track_id}"
                 )
             
-            # Send success notification email
+            # Send success notification email (using centralized notifications service)
             try:
-                send_payment_notification(
+                from notifications.services import send_payment_confirmation_email
+                send_payment_confirmation_email(
                     user=payment.user,
                     payment=payment,
                     status='success',
@@ -321,9 +329,10 @@ def process_failed_payment(payment: OxaPayPayment, payload: dict):
             payment.topup_intent.status = 'failed'
             payment.topup_intent.save()
         
-        # Send failure notification email
+        # Send failure notification email (using centralized notifications service)
         try:
-            send_payment_notification(
+            from notifications.services import send_payment_confirmation_email
+            send_payment_confirmation_email(
                 user=payment.user,
                 payment=payment,
                 status='failed',
@@ -352,9 +361,10 @@ def process_expired_payment(payment: OxaPayPayment, payload: dict):
             payment.topup_intent.status = 'expired'
             payment.topup_intent.save()
         
-        # Send expiration notification email
+        # Send expiration notification email (using centralized notifications service)
         try:
-            send_payment_notification(
+            from notifications.services import send_payment_confirmation_email
+            send_payment_confirmation_email(
                 user=payment.user,
                 payment=payment,
                 status='expired',
@@ -367,77 +377,6 @@ def process_expired_payment(payment: OxaPayPayment, payload: dict):
         logger.error(f"Failed to process expired payment {payment.track_id}: {e}", exc_info=True)
 
 
-def send_payment_notification(user, payment: OxaPayPayment, status: str, amount: float):
-    """
-    Send email notification to user about payment status.
-    
-    Args:
-        user: User instance
-        payment: OxaPayPayment instance
-        status: 'success', 'failed', or 'expired'
-        amount: Payment amount
-    """
-    try:
-        if not user.email:
-            logger.warning(f"User {user.id} has no email, skipping notification")
-            return
-        
-        subject_map = {
-            'success': f'Payment Confirmed - ${amount:.2f} Added to Your Wallet',
-            'failed': f'Payment Failed - ${amount:.2f}',
-            'expired': f'Payment Expired - ${amount:.2f}',
-        }
-        
-        message_map = {
-            'success': f"""
-Your payment of ${amount:.2f} USD has been confirmed and credited to your wallet.
-
-Payment Details:
-- Track ID: {payment.track_id}
-- Amount: ${amount:.2f} USD
-- Currency: {payment.pay_currency.upper()}
-- Transaction Hash: {payment.tx_hash or 'N/A'}
-
-Your wallet balance has been updated. Thank you for your payment!
-            """,
-            'failed': f"""
-Your payment of ${amount:.2f} USD has failed.
-
-Payment Details:
-- Track ID: {payment.track_id}
-- Amount: ${amount:.2f} USD
-- Currency: {payment.pay_currency.upper()}
-
-Please try again or contact support if you continue to experience issues.
-            """,
-            'expired': f"""
-Your payment of ${amount:.2f} USD has expired.
-
-Payment Details:
-- Track ID: {payment.track_id}
-- Amount: ${amount:.2f} USD
-- Currency: {payment.pay_currency.upper()}
-
-Please create a new payment to complete your top-up.
-            """,
-        }
-        
-        subject = subject_map.get(status, 'Payment Status Update')
-        message = message_map.get(status, 'Your payment status has been updated.')
-        
-        # Only send email if email backend is configured
-        if hasattr(settings, 'EMAIL_BACKEND') and settings.EMAIL_BACKEND:
-            send_mail(
-                subject=subject,
-                message=message.strip(),
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com'),
-                recipient_list=[user.email],
-                fail_silently=True,
-            )
-            logger.info(f"Sent {status} notification email to {user.email}")
-        else:
-            logger.debug(f"Email backend not configured, skipping notification to {user.email}")
-            
-    except Exception as e:
-        logger.error(f"Failed to send payment notification: {e}", exc_info=True)
+# Note: send_payment_notification() has been moved to notifications/services.py
+# as send_payment_confirmation_email() for centralized email management
 

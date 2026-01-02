@@ -746,3 +746,9 @@ sudo ufw deny 8000  # Don't expose Gunicorn directly
    - Keep track of configuration changes
    - Note any manual database changes
 
+
+
+
+
+
+
