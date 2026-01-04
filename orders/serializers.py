@@ -62,11 +62,11 @@ class CartItemSerializer(serializers.ModelSerializer):
 
     def get_unit_price(self, obj):
         """All prices are in USD"""
-        return f"${obj.unit_price_minor / 100:.2f}"
+        return f"${obj.unit_price_minor.amount:.2f}"
 
     def get_total_price(self, obj):
         """All prices are in USD"""
-        return f"${obj.total_price_minor / 100:.2f}"
+        return f"${obj.total_price_minor.amount:.2f}"
 
 
 class CartSerializer(serializers.ModelSerializer):
@@ -86,22 +86,33 @@ class CartSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def get_total(self, obj):
-        """All prices are in USD"""
-        return f"${obj.total_minor / 100:.2f}"
+        """All prices are in USD - total_minor is now Decimal from Cart property"""
+        return f"${obj.total_minor:.2f}"
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    # Account fields (nullable)
+    # Account fields (nullable) - include ALL fields for purchased items
     account_id = serializers.UUIDField(source='account.id', read_only=True, allow_null=True)
+    account_sku = serializers.CharField(source='account.sku', read_only=True, allow_null=True)
     account_name = serializers.CharField(source='account.name', read_only=True, allow_null=True)
     account_description = serializers.CharField(source='account.description', read_only=True, allow_null=True)
     account_bank_name = serializers.CharField(source='account.bank.name', read_only=True, allow_null=True)
+    account_bank_logo = serializers.URLField(source='account.bank.logo_url', read_only=True, allow_null=True)
+    account_balance = serializers.SerializerMethodField()
+    account_image_url = serializers.URLField(source='account.image_url', read_only=True, allow_null=True)
+    account_country = serializers.CharField(source='account.bank.country.name', read_only=True, allow_null=True)
+    account_country_code = serializers.CharField(source='account.bank.country.code', read_only=True, allow_null=True)
+    account_metadata = serializers.JSONField(source='account.metadata', read_only=True, allow_null=True)
+    account_has_fullz = serializers.BooleanField(source='account.has_fullz', read_only=True, allow_null=True)
+    # Bank logs (sensitive login information)
+    account_bank_logs = serializers.CharField(source='account.bank.logs', read_only=True, allow_null=True)
     # FullzPackage fields (nullable)
     fullz_package_id = serializers.UUIDField(source='fullz_package.id', read_only=True, allow_null=True)
     fullz_package_name = serializers.CharField(source='fullz_package.name', read_only=True, allow_null=True)
     fullz_package_description = serializers.CharField(source='fullz_package.description', read_only=True, allow_null=True)
     fullz_package_quantity = serializers.IntegerField(source='fullz_package.quantity', read_only=True, allow_null=True)
     fullz_package_bank_name = serializers.CharField(source='fullz_package.bank.name', read_only=True, allow_null=True)
+    fullz_package_bank_logo = serializers.URLField(source='fullz_package.bank.logo_url', read_only=True, allow_null=True)
     # Item type indicator
     item_type = serializers.SerializerMethodField()
     item_name = serializers.SerializerMethodField()
@@ -114,15 +125,28 @@ class OrderItemSerializer(serializers.ModelSerializer):
         model = OrderItem
         fields = [
             'id',
+            # Account fields
             'account_id',
+            'account_sku',
             'account_name',
             'account_description',
             'account_bank_name',
+            'account_bank_logo',
+            'account_balance',
+            'account_image_url',
+            'account_country',
+            'account_country_code',
+            'account_metadata',
+            'account_has_fullz',
+            'account_bank_logs',
+            # FullzPackage fields
             'fullz_package_id',
             'fullz_package_name',
             'fullz_package_description',
             'fullz_package_quantity',
             'fullz_package_bank_name',
+            'fullz_package_bank_logo',
+            # Common fields
             'item_type',
             'item_name',
             'item_description',
@@ -161,13 +185,19 @@ class OrderItemSerializer(serializers.ModelSerializer):
             return obj.fullz_package.bank.name
         return None
 
+    def get_account_balance(self, obj):
+        """Return formatted account balance"""
+        if obj.account:
+            return f"${obj.account.balance_minor.amount:.2f}"
+        return None
+
     def get_unit_price(self, obj):
         """All prices are in USD"""
-        return f"${obj.unit_price_minor / 100:.2f}"
+        return f"${obj.unit_price_minor.amount:.2f}"
 
     def get_total_price(self, obj):
         """All prices are in USD"""
-        return f"${obj.total_price_minor / 100:.2f}"
+        return f"${obj.total_price_minor.amount:.2f}"
 
 
 class FulfillmentSerializer(serializers.ModelSerializer):
@@ -222,15 +252,15 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_subtotal(self, obj):
         """All prices are in USD"""
-        return f"${obj.subtotal_minor / 100:.2f}"
+        return f"${obj.subtotal_minor.amount:.2f}"
 
     def get_fees(self, obj):
         """All prices are in USD"""
-        return f"${obj.fees_minor / 100:.2f}"
+        return f"${obj.fees_minor.amount:.2f}"
 
     def get_total(self, obj):
         """All prices are in USD"""
-        return f"${obj.total_minor / 100:.2f}"
+        return f"${obj.total_minor.amount:.2f}"
 
     def get_date(self, obj):
         return obj.created_at.strftime('%Y-%m-%d %H:%M')

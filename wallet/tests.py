@@ -44,7 +44,7 @@ class WalletTests(APITestCase):
         
         # Verify wallet was created
         wallet = Wallet.objects.get(user=self.user)
-        self.assertEqual(wallet.balance_minor, 0)
+        self.assertEqual(wallet.balance_minor.amount, 0)
         self.assertEqual(wallet.currency_code, 'USD')
 
     def test_get_networks(self):
@@ -60,13 +60,13 @@ class WalletTests(APITestCase):
         self.client.force_authenticate(user=self.user)
         url = reverse('topup-list')
         data = {
-            'amount_minor': 5000,  # $50.00
+            'amount_minor': 50,  # $50.00 (MoneyField stores dollars)
             'network_id': str(self.network.id),
             'ttl_minutes': 30,
         }
         res = self.client.post(url, data, format='json')
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(res.data['amount_minor'], 5000)
+        self.assertEqual(res.data['amount'], '$50.00')  # MoneyField formatted as dollars
         self.assertIn('deposit_address', res.data)
         self.assertIn('address', res.data['deposit_address'])
 
@@ -75,7 +75,7 @@ class WalletTests(APITestCase):
         self.client.force_authenticate(user=self.user)
         url = reverse('topup-list')
         data = {
-            'amount_minor': 5000,
+            'amount_minor': 50,  # $50.00 (MoneyField stores dollars)
             'network_id': str(self.network.id),
         }
         res = self.client.post(url, data, format='json')
@@ -94,7 +94,7 @@ class WalletTests(APITestCase):
         self.client.force_authenticate(user=self.user)
         url = reverse('topup-list')
         data = {
-            'amount_minor': 5000,
+            'amount_minor': 50,  # $50.00 (MoneyField stores dollars)
             'network_id': str(self.network.id),
         }
         
@@ -111,15 +111,12 @@ class WalletTests(APITestCase):
 
     def test_get_topups(self):
         """Test getting user's top-ups"""
-        from django.utils import timezone
-        from datetime import timedelta
-        
         self.client.force_authenticate(user=self.user)
         
-        # Create a top-up
+        # Create a top-up - MoneyField stores dollars
         TopUpIntent.objects.create(
             user=self.user,
-            amount_minor=5000,
+            amount_minor=50,  # $50.00
             currency_code='USD',
             network=self.network,
             deposit_address=DepositAddress.objects.create(
@@ -129,14 +126,13 @@ class WalletTests(APITestCase):
                 index=0,
             ),
             status='pending',
-            expires_at=timezone.now() + timedelta(minutes=30),
         )
         
         url = reverse('topup-list')
         res = self.client.get(url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(len(res.data), 1)
-        self.assertEqual(res.data[0]['amount_minor'], 5000)
+        self.assertEqual(res.data[0]['amount'], '$50.00')  # MoneyField formatted
 
     def test_address_index_atomic(self):
         """Test that address index reservation is atomic"""

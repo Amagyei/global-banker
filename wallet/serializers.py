@@ -85,7 +85,7 @@ class OnChainTransactionSerializer(serializers.ModelSerializer):
 
     def get_amount_usd(self, obj):
         """Format amount in USD"""
-        return f"${obj.amount_minor / 100:.2f}"
+        return f"${obj.amount_minor.amount:.2f}"
 
 
 class TopUpIntentSerializer(serializers.ModelSerializer):
@@ -114,7 +114,7 @@ class TopUpIntentSerializer(serializers.ModelSerializer):
 
     def get_amount(self, obj):
         """Format amount as currency string"""
-        return f"${obj.amount_minor / 100:.2f}"
+        return f"${obj.amount_minor.amount:.2f}"
 
     def get_qr_code_data(self, obj):
         """Generate QR code data URI for deposit address"""
@@ -156,11 +156,11 @@ class WalletSerializer(serializers.ModelSerializer):
 
     def get_balance(self, obj):
         """Format balance as currency string"""
-        return f"${obj.balance_minor / 100:.2f}"
+        return obj.balance_minor.amount
 
     def get_pending(self, obj):
         """Format pending as currency string"""
-        return f"${obj.pending_minor / 100:.2f}"
+        return obj.pending_minor.amount
 
 
 class OxaPayPaymentSerializer(serializers.ModelSerializer):

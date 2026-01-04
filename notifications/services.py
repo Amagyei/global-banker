@@ -45,7 +45,7 @@ def send_order_confirmation_email(order) -> bool:
                 item_name = item.fullz_package.name
             else:
                 item_name = 'Unknown Item'
-            item_price = item.unit_price_minor / 100
+            item_price = item.unit_price_minor.amount  # MoneyField stores dollars
             items_list.append(f"{item.quantity}x {item_name} - ${item_price:.2f}")
         
         items_text = "\n".join(items_list) if items_list else "No items"
@@ -55,7 +55,7 @@ def send_order_confirmation_email(order) -> bool:
             'order_number': order.order_number,
             'order_date': order.created_at.strftime('%Y-%m-%d %H:%M'),
             'items_list': items_text,
-            'total': f"{order.total_minor / 100:.2f}",  # Format with 2 decimal places
+            'total': f"{order.total_minor.amount:.2f}",  # MoneyField stores dollars
             'recipient_name': recipient_name,
         }
         
@@ -73,7 +73,7 @@ Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}
 Items:
 {items_text}
 
-Total: ${order.total_minor / 100:.2f}
+Total: ${order.total_minor.amount:.2f}
 
 If you have any questions, please contact @mentor_kev on Telegram."""
         

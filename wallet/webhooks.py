@@ -218,15 +218,15 @@ def process_paid_payment(payment: OxaPayPayment, payload: dict):
                             defaults={'currency_code': 'USD', 'balance_minor': 0}
                         )
                         
-                        amount_minor = int(payment.amount * 100)
+                        # All fields are now MoneyField - use dollars directly
                         Transaction.objects.create(
                             user=payment.user,
                             direction='debit',
                             category='purchase',
-                            amount_minor=amount_minor,
+                            amount_minor=payment.amount,
                             currency_code='USD',
                             description=f'Order {order.order_number} payment via OXA Pay',
-                            balance_after_minor=wallet.balance_minor,
+                            balance_after_minor=wallet.balance_minor.amount,
                             status='completed',
                             related_order_id=order.id,
                         )
@@ -252,8 +252,8 @@ def process_paid_payment(payment: OxaPayPayment, payload: dict):
                     defaults={'currency_code': 'USD', 'balance_minor': 0}
                 )
                 
-                # Convert amount to minor units (cents)
-                amount_minor = int(payment.amount * 100)
+                # All fields are now MoneyField - use dollars directly
+                amount_dollars = payment.amount
                 
                 # Check if already credited (prevent double crediting)
                 existing_tx = Transaction.objects.filter(
@@ -269,8 +269,8 @@ def process_paid_payment(payment: OxaPayPayment, payload: dict):
                     logger.info(f"Payment {payment.track_id} already credited, skipping duplicate")
                     return
                 
-                # Credit user wallet
-                wallet.balance_minor += amount_minor
+                # Credit user wallet - all fields are MoneyField (dollars)
+                wallet.balance_minor += amount_dollars
                 wallet.save()
                 
                 # Update top-up intent if exists
@@ -278,21 +278,21 @@ def process_paid_payment(payment: OxaPayPayment, payload: dict):
                     payment.topup_intent.status = 'succeeded'
                     payment.topup_intent.save()
                 
-                # Create transaction record
+                # Create transaction record - all MoneyFields now
                 Transaction.objects.create(
                     user=payment.user,
                     direction='credit',
                     category='topup',
-                    amount_minor=amount_minor,
+                    amount_minor=amount_dollars,
                     currency_code='USD',
                     description=f'Crypto deposit via OXA Pay ({payment.pay_currency.upper()})',
-                    balance_after_minor=wallet.balance_minor,
+                    balance_after_minor=wallet.balance_minor.amount,
                     status='completed',
                     related_topup_intent_id=payment.topup_intent.id if payment.topup_intent else None,
                 )
                 
                 logger.info(
-                    f"✅ Credited ${amount_minor/100:.2f} to wallet for user {payment.user.email} "
+                    f"✅ Credited ${amount_dollars:.2f} to wallet for user {payment.user.email} "
                     f"via OXA Pay payment {payment.track_id}"
                 )
             
