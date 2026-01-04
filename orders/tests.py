@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from .models import Cart, CartItem, Order, OrderItem, Fulfillment
 from catalog.models import Country, Bank, Account
+from wallet.models import Wallet
 
 User = get_user_model()
 
@@ -29,20 +30,21 @@ class CartTests(APITestCase):
             country=self.us,
             is_active=True
         )
+        # MoneyField stores dollars, not cents
         self.account1 = Account.objects.create(
             name='Chase Premium',
             description='Premium account',
             bank=self.chase,
-            balance_minor=100000,
-            price_minor=9500,
+            balance_minor=1000,  # $1000.00
+            price_minor=95,      # $95.00
             is_active=True
         )
         self.account2 = Account.objects.create(
             name='Chase Classic',
             description='Classic account',
             bank=self.chase,
-            balance_minor=50000,
-            price_minor=4500,
+            balance_minor=500,   # $500.00
+            price_minor=45,      # $45.00
             is_active=True
         )
 
@@ -177,22 +179,30 @@ class OrderTests(APITestCase):
             country=self.us,
             is_active=True
         )
+        # MoneyField stores dollars, not cents
         self.account1 = Account.objects.create(
             name='Chase Premium',
             description='Premium account',
             bank=self.chase,
-            balance_minor=100000,
-            price_minor=9500,
+            balance_minor=1000,  # $1000.00
+            price_minor=95,      # $95.00
             is_active=True
         )
         
-        # Create cart with item
+        # Create cart with item - MoneyField stores dollars
         self.cart = Cart.objects.create(user=self.user, currency_code='USD')
         self.cart_item = CartItem.objects.create(
             cart=self.cart,
             account=self.account1,
             quantity=1,
-            unit_price_minor=9500
+            unit_price_minor=95  # $95.00
+        )
+        
+        # Create wallet with sufficient balance for purchases
+        self.wallet = Wallet.objects.create(
+            user=self.user,
+            currency_code='USD',
+            balance_minor=1000  # $1000.00
         )
 
     def test_create_order_requires_auth(self):
@@ -214,7 +224,7 @@ class OrderTests(APITestCase):
         res = self.client.post(url, data, format='json')
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         self.assertIn('order_number', res.data)
-        self.assertEqual(res.data['status'], 'pending')
+        self.assertEqual(res.data['status'], 'paid')  # Wallet payment marks order as paid
         self.assertEqual(res.data['total'], '$95.00')
 
     def test_create_order_creates_transaction(self):
@@ -237,7 +247,7 @@ class OrderTests(APITestCase):
         self.assertIsNotNone(transaction)
         self.assertEqual(transaction.direction, 'debit')
         self.assertEqual(transaction.category, 'purchase')
-        self.assertEqual(transaction.status, 'pending')
+        self.assertEqual(transaction.status, 'completed')  # Wallet payment completes transaction
 
     def test_create_order_clears_cart(self):
         """Test that creating order clears cart"""
@@ -274,12 +284,12 @@ class OrderTests(APITestCase):
 
     def test_list_orders(self):
         """Test listing user's orders"""
-        # Create an order
+        # Create an order - MoneyField stores dollars
         order = Order.objects.create(
             user=self.user,
-            subtotal_minor=9500,
+            subtotal_minor=95,  # $95.00
             fees_minor=0,
-            total_minor=9500,
+            total_minor=95,     # $95.00
             currency_code='USD',
             recipient={'name': 'Test'},
             status='paid'
@@ -294,11 +304,12 @@ class OrderTests(APITestCase):
 
     def test_order_price_always_usd(self):
         """Test that order prices are always in USD"""
+        # MoneyField stores dollars
         order = Order.objects.create(
             user=self.user,
-            subtotal_minor=9500,
+            subtotal_minor=95,  # $95.00
             fees_minor=0,
-            total_minor=9500,
+            total_minor=95,     # $95.00
             currency_code='USD',
             recipient={'name': 'Test'},
             status='paid'
@@ -318,11 +329,12 @@ class OrderTests(APITestCase):
             email='other@example.com',
             password='testpass123'
         )
+        # MoneyField stores dollars
         Order.objects.create(
             user=other_user,
-            subtotal_minor=5000,
+            subtotal_minor=50,  # $50.00
             fees_minor=0,
-            total_minor=5000,
+            total_minor=50,     # $50.00
             currency_code='USD',
             recipient={'name': 'Other'},
             status='paid'
@@ -358,13 +370,21 @@ class IntegrationTests(APITestCase):
             country=self.us,
             is_active=True
         )
+        # MoneyField stores dollars
         self.account = Account.objects.create(
             name='Chase Premium',
             description='Premium account',
             bank=self.chase,
-            balance_minor=100000,
-            price_minor=9500,
+            balance_minor=1000,  # $1000.00
+            price_minor=95,      # $95.00
             is_active=True
+        )
+        
+        # Create wallet with sufficient balance for purchases
+        self.wallet = Wallet.objects.create(
+            user=self.user,
+            currency_code='USD',
+            balance_minor=1000  # $1000.00
         )
 
     def test_complete_purchase_workflow(self):

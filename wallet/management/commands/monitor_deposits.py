@@ -265,14 +265,14 @@ class Command(BaseCommand):
                 )
                 return
             
-            # Check if amount matches (within 1% tolerance)
-            expected_minor = topup_intent.amount_minor
-            amount_minor = onchain_tx.amount_minor
+            # Check if amount matches (within 1% tolerance) - all MoneyFields now
+            expected_amount = topup_intent.amount_minor.amount
+            received_amount = onchain_tx.amount_minor.amount
             
-            if abs(amount_minor - expected_minor) / expected_minor > 0.01:
+            if abs(received_amount - expected_amount) / expected_amount > 0.01:
                 logger.warning(
                     f"Amount mismatch for top-up {topup_intent.id}: "
-                    f"expected ${expected_minor/100:.2f}, got ${amount_minor/100:.2f} - skipping crediting"
+                    f"expected ${expected_amount:.2f}, got ${received_amount:.2f} - skipping crediting"
                 )
                 return
             
@@ -295,25 +295,25 @@ class Command(BaseCommand):
                 )
                 return
             
-            # Credit the wallet
+            # Credit the wallet - all fields are MoneyField (dollars)
             with transaction.atomic():
                 wallet.refresh_from_db()  # Get latest balance
-                wallet.balance_minor += amount_minor
+                wallet.balance_minor += received_amount
                 wallet.save()
                 logger.info(
-                    f"💰 Credited ${amount_minor/100:.2f} to wallet for user {onchain_tx.user.email} "
-                    f"(new balance: ${wallet.balance_minor/100:.2f})"
+                    f"💰 Credited ${received_amount:.2f} to wallet for user {onchain_tx.user.email} "
+                    f"(new balance: ${wallet.balance_minor.amount:.2f})"
                 )
                 
-                # Create transaction record
+                # Create transaction record - all MoneyFields now
                 Transaction.objects.create(
                     user=onchain_tx.user,
                     direction='credit',
                     category='topup',
-                    amount_minor=amount_minor,
+                    amount_minor=received_amount,
                     currency_code='USD',
                     description=f'Crypto deposit via {onchain_tx.network.name}',
-                    balance_after_minor=wallet.balance_minor,
+                    balance_after_minor=wallet.balance_minor.amount,
                     status='completed',
                     related_topup_intent_id=topup_intent.id,
                     related_onchain_tx_id=onchain_tx.id,
@@ -324,7 +324,7 @@ class Command(BaseCommand):
                 
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f'  💰 Credited ${amount_minor/100:.2f} to {onchain_tx.user.email}'
+                        f'  💰 Credited ${received_amount:.2f} to {onchain_tx.user.email}'
                     )
                 )
         

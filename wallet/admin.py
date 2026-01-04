@@ -58,11 +58,11 @@ class WalletAdmin(admin.ModelAdmin):
     readonly_fields = ('id', 'updated_at')
 
     def get_balance(self, obj):
-        return f"${obj.balance_minor / 100:.2f}"
+        return f"${obj.balance_minor.amount:.2f}"
     get_balance.short_description = 'Balance'
 
     def get_pending(self, obj):
-        return f"${obj.pending_minor / 100:.2f}"
+        return f"${obj.pending_minor.amount:.2f}"
     get_pending.short_description = 'Pending'
 
 

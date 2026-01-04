@@ -3,6 +3,7 @@ import re
 from django.db import models
 from django.db.models.signals import pre_save
 from django.dispatch import receiver
+from djmoney.models.fields import MoneyField
 
 
 class Country(models.Model):
@@ -74,7 +75,7 @@ class FullzPackage(models.Model):
     name = models.CharField(max_length=200)  # e.g., "Starter Pack", "Premium Bundle"
     description = models.TextField()
     quantity = models.PositiveIntegerField()  # Number of fullz in this package
-    price_minor = models.BigIntegerField()  # Price in minor units (cents)
+    price_minor = MoneyField(max_digits=14, decimal_places=2, default_currency='USD')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -86,7 +87,7 @@ class FullzPackage(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.name} - {self.quantity} fullz - ${self.price_minor / 100:.2f}"
+        return f"{self.name} - {self.quantity} fullz - ${self.price_minor.amount:.2f}"
 
     
 
@@ -107,15 +108,14 @@ class Account(models.Model):
     name = models.CharField(max_length=200)  # product name
     description = models.TextField()
     bank = models.ForeignKey(Bank, on_delete=models.CASCADE, related_name='accounts')
-    balance_minor = models.BigIntegerField()  # account balance in minor units (e.g., 77300 for $773.00)
-    price_minor = models.BigIntegerField()  # selling price in minor units
+    balance_minor = MoneyField(max_digits=19, decimal_places=4, default_currency='USD')
+    price_minor = MoneyField(max_digits=14, decimal_places=2, default_currency='USD')
     image_url = models.URLField(blank=True)
     has_fullz = models.BooleanField(default=False)  # indicates if this account has fullz data available
     is_active = models.BooleanField(default=True)
     metadata = models.JSONField(default=dict, blank=True)  # additional product data
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
 
     class Meta:
         ordering = ['-created_at']

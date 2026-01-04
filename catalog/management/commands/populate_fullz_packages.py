@@ -92,7 +92,8 @@ class Command(BaseCommand):
                         package.quantity = template['quantity']
                         updated = True
                     # Update price based on current bank's factor
-                    if package.price_minor != price_minor:
+                    # Compare Money amount to int (price_minor is MoneyField)
+                    if int(package.price_minor.amount * 100) != price_minor:
                         package.price_minor = price_minor
                         updated = True
                     if updated:

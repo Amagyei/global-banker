@@ -439,25 +439,28 @@ class IntegrationTests(TestCase):
         from orders.models import Cart, CartItem
         from transactions.models import Transaction
         
-        # Create cart with item
+        # Create cart with item - all fields are now MoneyField (dollars)
         cart, _ = Cart.objects.get_or_create(user=self.user)
         CartItem.objects.create(
             cart=cart,
             account=self.account,
             quantity=1,
-            unit_price_minor=self.account.price_minor
+            unit_price_minor=self.account.price_minor.amount
         )
         
-        # Update wallet balance to have enough funds
-        self.wallet.balance_minor = 100000
+        # Update wallet balance to have enough funds (MoneyField stores dollars)
+        self.wallet.balance_minor = 1000  # $1000.00
         self.wallet.save()
         
-        # Create order and simulate wallet payment flow (same as OrderViewSet.create)
+        # All fields are now MoneyField (dollars)
+        price = self.account.price_minor.amount
+        
+        # Create order and simulate wallet payment flow
         order = Order.objects.create(
             user=self.user,
-            subtotal_minor=self.account.price_minor,
+            subtotal_minor=price,
             fees_minor=0,
-            total_minor=self.account.price_minor,
+            total_minor=price,
             currency_code='USD',
             recipient={'name': 'Test User', 'email': 'test@example.com'},
             status='pending'
@@ -466,21 +469,21 @@ class IntegrationTests(TestCase):
             order=order,
             account=self.account,
             quantity=1,
-            unit_price_minor=self.account.price_minor
+            unit_price_minor=price
         )
         
         # Simulate wallet payment: deduct balance, create transaction, mark as paid
-        self.wallet.balance_minor -= order.total_minor
+        self.wallet.balance_minor -= order.total_minor.amount
         self.wallet.save()
         
         Transaction.objects.create(
             user=self.user,
             direction='debit',
             category='purchase',
-            amount_minor=order.total_minor,
+            amount_minor=order.total_minor.amount,
             currency_code='USD',
             description=f'Order {order.order_number}',
-            balance_after_minor=self.wallet.balance_minor,
+            balance_after_minor=self.wallet.balance_minor.amount,
             status='completed',
             related_order_id=order.id,
         )
