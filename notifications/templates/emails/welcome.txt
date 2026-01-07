@@ -1,0 +1,21 @@
+Welcome to Bank Pro!
+
+Hello {{ recipient_name }},
+
+Thank you for creating an account with Bank Pro! We're excited to have you on board.
+
+Your account has been successfully created and you can now:
+- Browse our catalog of bank accounts and Fullz packages
+- Add funds to your wallet securely
+- Make purchases and track your orders
+- Access your transaction history
+
+If you have any questions or need assistance, please don't hesitate to reach out to our support team at @mentor_kev on Telegram.
+
+We're here to help you every step of the way.
+
+Welcome aboard!
+
+Best regards,
+The Bank Pro Team
+

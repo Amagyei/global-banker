@@ -132,15 +132,20 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    'anymail',
     'rest_framework',
     'rest_framework_simplejwt',
     'django_filters',
     'corsheaders',
+    'django_celery_beat',
+    'django_celery_results',
     'accounts',
     'catalog',
     'transactions',
     'orders',
     'wallet',
+    'notifications',
 ]
 
 REST_FRAMEWORK = {
@@ -157,14 +162,18 @@ REST_FRAMEWORK = {
 # Refresh token also expires after 15 minutes to enforce inactivity timeout
 # Users will be logged out after 15 minutes of no activity
 # Note: Frontend automatically refreshes tokens on API calls, so active users stay logged in
+# Sliding-session controls (minutes of inactivity before frontend will log user out)
+SESSION_IDLE_TIMEOUT_MINUTES = int(os.getenv('SESSION_IDLE_TIMEOUT_MINUTES', '15'))
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
-    'REFRESH_TOKEN_LIFETIME': timedelta(minutes=15),  # Changed from 7 days to 15 minutes for inactivity timeout
+    'REFRESH_TOKEN_LIFETIME': timedelta(hours=int(os.getenv('REFRESH_TOKEN_HOURS', '12'))),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
+    'UPDATE_LAST_LOGIN': True,
 }
 
 # CORS Settings
@@ -321,3 +330,35 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Email Configuration
+ANYMAIL = {
+    "BREVO_API_KEY": os.environ.get('BREVO_API_KEY'),
+}
+EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
+DEFAULT_FROM_EMAIL = os.environ.get('EMAIL_HOST_USER', 'noreply@yourdomain.com')
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'django-db')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes max per task
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Process one task at a time for wallet operations
+CELERY_TASK_ACKS_LATE = True  # Acknowledge task after completion (for reliability)
+
+# Rate Limiting Configuration
+RATELIMIT_ENABLE = True
+RATELIMIT_USE_CACHE = 'default'
+RATELIMIT_VIEW = 'wallet.views.rate_limit_exceeded'  # Custom view for rate limit errors
+
+# Transaction Alert Configuration
+TRANSACTION_ALERT_EMAIL = os.getenv('TRANSACTION_ALERT_EMAIL', 'nakwa234455@gmail.com')
+TRANSACTION_ALERT_THRESHOLD_USD = int(os.getenv('TRANSACTION_ALERT_THRESHOLD_USD', '100'))  # Alert for txs > $100
+
+# OXA Pay Configuration
+OXAPAY_API_KEY = os.getenv('OXAPAY_API_KEY', '')
+OXAPAY_CALLBACK_URL = os.getenv('OXAPAY_CALLBACK_URL', '')

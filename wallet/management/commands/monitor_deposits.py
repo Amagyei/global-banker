@@ -322,6 +322,19 @@ class Command(BaseCommand):
                     f"📝 Created transaction record for on-chain transaction {onchain_tx.id}"
                 )
                 
+                # Send deposit confirmation email
+                try:
+                    from notifications.services import send_deposit_confirmation_email
+                    send_deposit_confirmation_email(
+                        user=onchain_tx.user,
+                        amount=amount_minor / 100,
+                        network_name=onchain_tx.network.name,
+                        tx_hash=onchain_tx.tx_hash,
+                        new_balance=wallet.balance_minor / 100
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send deposit confirmation email: {e}")
+                
                 self.stdout.write(
                     self.style.SUCCESS(
                         f'  💰 Credited ${amount_minor/100:.2f} to {onchain_tx.user.email}'

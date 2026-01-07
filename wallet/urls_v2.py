@@ -10,6 +10,8 @@ from .views_v2 import (
     OxaPayPaymentViewSet,
     OxaPayStaticAddressViewSet,
     OxaPayInvoiceViewSet,
+    AddressValidationViewSet,
+    FeeEstimationViewSet,
 )
 from .webhooks import oxapay_webhook
 from .webhook_views import webhook_status, webhook_payment_detail, test_webhook
@@ -21,6 +23,8 @@ router.register(r'topups', TopUpIntentV2ViewSet, basename='topup-v2')
 router.register(r'payments', OxaPayPaymentViewSet, basename='payment')
 router.register(r'static-addresses', OxaPayStaticAddressViewSet, basename='static-address')
 router.register(r'invoices', OxaPayInvoiceViewSet, basename='invoice')
+router.register(r'address', AddressValidationViewSet, basename='address-validation')
+router.register(r'fees', FeeEstimationViewSet, basename='fee-estimation')
 
 urlpatterns = [
     path('', include(router.urls)),

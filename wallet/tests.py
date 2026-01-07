@@ -129,7 +129,6 @@ class WalletTests(APITestCase):
                 index=0,
             ),
             status='pending',
-            expires_at=timezone.now() + timedelta(minutes=30),
         )
         
         url = reverse('topup-list')

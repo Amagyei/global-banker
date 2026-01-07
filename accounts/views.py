@@ -23,6 +23,15 @@ class RegisterView(APIView):
         # Create profile for new user
         Profile.objects.get_or_create(user=user)
 
+        # Send welcome email
+        try:
+            from notifications.services import send_welcome_email
+            send_welcome_email(user)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to send welcome email to {user.email}: {e}")
+
         # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
         return Response(

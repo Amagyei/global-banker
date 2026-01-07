@@ -10,6 +10,10 @@ from django.conf import settings
 import logging
 import json
 
+from .rate_limiting import RateLimitMixin
+from .address_validation import AddressValidator, validate_deposit_address
+from .fee_estimation import FeeEstimator, get_recommended_fee
+
 logger = logging.getLogger(__name__)
 
 from .models import (
@@ -56,10 +60,17 @@ class CryptoNetworkV2ViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
 
-class TopUpIntentV2ViewSet(viewsets.ModelViewSet):
+class TopUpIntentV2ViewSet(RateLimitMixin, viewsets.ModelViewSet):
     """ViewSet for top-up intents using OXA Pay (v2)"""
     serializer_class = TopUpIntentSerializer
     permission_classes = [permissions.IsAuthenticated]
+    
+    # Rate limits for top-up operations
+    rate_limits = {
+        'list': '60/m',
+        'retrieve': '60/m',
+        'create': '10/m',  # Limit payment creation
+    }
 
     def get_queryset(self):
         return TopUpIntent.objects.filter(user=self.request.user).select_related(
@@ -496,4 +507,86 @@ class OxaPayInvoiceViewSet(viewsets.ViewSet):
                 {'detail': 'Failed to generate invoice. Please try again.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class AddressValidationViewSet(viewsets.ViewSet):
+    """ViewSet for address validation"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @action(detail=False, methods=['post'])
+    def validate(self, request):
+        """
+        Validate a cryptocurrency address.
+        
+        Request body:
+        {
+            "address": "bc1q...",
+            "network_key": "btc",
+            "is_testnet": false
+        }
+        """
+        address = request.data.get('address')
+        network_key = request.data.get('network_key')
+        is_testnet = request.data.get('is_testnet', False)
+        
+        if not address or not network_key:
+            return Response(
+                {'detail': 'address and network_key are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        is_valid, error = validate_deposit_address(address, network_key, is_testnet)
+        address_type = AddressValidator.get_address_type(address, network_key)
+        
+        return Response({
+            'is_valid': is_valid,
+            'error': error,
+            'address_type': address_type,
+            'network_key': network_key,
+            'is_testnet': is_testnet,
+        })
+
+
+class FeeEstimationViewSet(viewsets.ViewSet):
+    """ViewSet for fee estimation"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    @action(detail=False, methods=['get'])
+    def estimate(self, request):
+        """
+        Get fee estimates for a network.
+        
+        Query params:
+        - network_key: btc, eth, ltc, etc.
+        - is_testnet: true/false (default: false)
+        - priority: fast, medium, slow (default: medium)
+        - tx_type: p2wpkh, transfer, erc20 (default: p2wpkh)
+        """
+        network_key = request.query_params.get('network_key', 'btc')
+        is_testnet = request.query_params.get('is_testnet', 'false').lower() == 'true'
+        priority = request.query_params.get('priority', 'medium')
+        tx_type = request.query_params.get('tx_type', 'p2wpkh')
+        
+        # Get fee estimates
+        fees = get_recommended_fee(network_key, is_testnet, priority)
+        
+        # Get transaction fee estimate
+        tx_fee, description = FeeEstimator.estimate_transaction_fee(
+            network_key=network_key,
+            is_testnet=is_testnet,
+            priority=priority,
+            tx_type=tx_type
+        )
+        
+        return Response({
+            'network_key': network_key,
+            'is_testnet': is_testnet,
+            'fee_rates': fees,
+            'transaction_fee': {
+                'amount': tx_fee,
+                'description': description,
+                'priority': priority,
+                'tx_type': tx_type,
+            }
+        })
 

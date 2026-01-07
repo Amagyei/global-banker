@@ -242,15 +242,25 @@ class SweepService:
     
     def _estimate_fee(self, network: CryptoNetwork, is_testnet: bool) -> int:
         """
-        Estimate transaction fee.
-        For now, use a fixed fee. In production, use fee estimation API.
+        Estimate transaction fee using real-time fee data.
+        Falls back to conservative defaults if API fails.
         """
-        # Conservative fee estimate
-        # Testnet: lower fees, Mainnet: higher fees
-        if is_testnet:
-            return 1000  # 1000 satoshis for testnet
-        else:
-            return 10000  # 10000 satoshis for mainnet (conservative)
+        try:
+            from .fee_estimation import FeeEstimator
+            fee = FeeEstimator.estimate_sweep_fee(
+                network_key=network.key,
+                is_testnet=is_testnet,
+                priority='medium'
+            )
+            logger.info(f"Estimated sweep fee for {network.key}: {fee} atomic units")
+            return fee
+        except Exception as e:
+            logger.warning(f"Fee estimation failed, using defaults: {e}")
+            # Fallback to conservative estimates
+            if is_testnet:
+                return 1000  # 1000 satoshis for testnet
+            else:
+                return 10000  # 10000 satoshis for mainnet
     
     def _broadcast_transaction(self, tx_hex: str, network: CryptoNetwork) -> str:
         """Broadcast transaction to blockchain"""

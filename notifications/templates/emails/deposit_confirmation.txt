@@ -1,0 +1,21 @@
+Deposit Confirmed - ${{ amount }} Added to Your Wallet
+
+Hello {{ recipient_name }},
+
+Your deposit has been successfully processed and credited to your wallet.
+
+Deposit Details:
+- Amount: ${{ amount }} USD
+- Network: {{ network_name }}
+- Transaction Hash: {{ tx_hash }}
+- New Wallet Balance: ${{ new_balance }} USD
+
+Your wallet balance has been updated. You can now use these funds to make purchases.
+
+If you have any questions or experience any issues, please contact @mentor_kev on Telegram.
+
+Thank you for your deposit!
+
+Best regards,
+The Bank Pro Team
+

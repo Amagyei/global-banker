@@ -39,7 +39,7 @@ class AccountSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Account
-        fields = [
+        fields = [ 
             'id',
             'sku',
             'name',

@@ -21,45 +21,73 @@ class CartViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='items')
     def add_item(self, request):
-        """Add item to cart"""
+        """Add item to cart - supports both Account and FullzPackage"""
         cart, _ = Cart.objects.get_or_create(user=request.user)
         account_id = request.data.get('account_id')
+        fullz_package_id = request.data.get('fullz_package_id')
         quantity = int(request.data.get('quantity', 1))
         
-        if not account_id:
-            return Response({'detail': 'account_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not account_id and not fullz_package_id:
+            return Response({'detail': 'account_id or fullz_package_id is required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        from catalog.models import Account
-        try:
-            account = Account.objects.get(id=account_id, is_active=True)
-        except Account.DoesNotExist:
-            return Response({'detail': 'Account not found'}, status=status.HTTP_404_NOT_FOUND)
+        if account_id and fullz_package_id:
+            return Response({'detail': 'Cannot specify both account_id and fullz_package_id'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if user has already purchased this account
-        already_purchased = OrderItem.objects.filter(
-            order__user=request.user,
-            order__status__in=['paid', 'delivered'],
-            account=account
-        ).exists()
+        from catalog.models import Account, FullzPackage
         
-        if already_purchased:
-            return Response(
-                {'detail': 'You have already purchased this account'}, 
-                status=status.HTTP_400_BAD_REQUEST
+        if account_id:
+            # Handle Account
+            try:
+                account = Account.objects.get(id=account_id, is_active=True)
+            except Account.DoesNotExist:
+                return Response({'detail': 'Account not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Check if user has already purchased this account
+            already_purchased = OrderItem.objects.filter(
+                order__user=request.user,
+                order__status__in=['paid', 'delivered'],
+                account=account
+            ).exists()
+            
+            if already_purchased:
+                return Response(
+                    {'detail': 'You have already purchased this account'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            cart_item, created = CartItem.objects.get_or_create(
+                cart=cart,
+                account=account,
+                fullz_package=None,
+                defaults={
+                    'quantity': quantity,
+                    'unit_price_minor': account.price_minor,
+                }
             )
-        
-        cart_item, created = CartItem.objects.get_or_create(
-            cart=cart,
-            account=account,
-            defaults={
-                'quantity': quantity,
-                'unit_price_minor': account.price_minor,
-            }
-        )
-        
-        if not created:
-            cart_item.quantity += quantity
-            cart_item.save()
+            
+            if not created:
+                cart_item.quantity += quantity
+                cart_item.save()
+        else:
+            # Handle FullzPackage
+            try:
+                fullz_package = FullzPackage.objects.get(id=fullz_package_id, is_active=True)
+            except FullzPackage.DoesNotExist:
+                return Response({'detail': 'FullzPackage not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            cart_item, created = CartItem.objects.get_or_create(
+                cart=cart,
+                account=None,
+                fullz_package=fullz_package,
+                defaults={
+                    'quantity': quantity,
+                    'unit_price_minor': fullz_package.price_minor,
+                }
+            )
+            
+            if not created:
+                cart_item.quantity += quantity
+                cart_item.save()
         
         serializer = CartItemSerializer(cart_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
@@ -72,7 +100,7 @@ class CartItemViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         cart, _ = Cart.objects.get_or_create(user=self.request.user)
-        return CartItem.objects.filter(cart=cart).select_related('account')
+        return CartItem.objects.filter(cart=cart).select_related('account', 'fullz_package', 'fullz_package__bank')
 
     def update(self, request, *args, **kwargs):
         """Update cart item quantity"""
@@ -93,7 +121,14 @@ class OrderViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Order.objects.filter(user=self.request.user).prefetch_related('items', 'items__account', 'items__account__bank', 'fulfillments')
+        return Order.objects.filter(user=self.request.user).prefetch_related(
+            'items', 
+            'items__account', 
+            'items__account__bank', 
+            'items__fullz_package',
+            'items__fullz_package__bank',
+            'fulfillments'
+        )
 
     def create(self, request):
         """Create order from cart
@@ -121,7 +156,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             fees_minor = 0  # No fees for now
             total_minor = subtotal_minor + fees_minor
             
-            # Create order (status will be 'pending' for oxapay, 'paid' for wallet)
+            # Create order (status will be 'pending' for oxapay/crypto, 'paid' for wallet after payment)
             order = Order.objects.create(
                 user=request.user,
                 subtotal_minor=subtotal_minor,
@@ -129,14 +164,15 @@ class OrderViewSet(viewsets.ModelViewSet):
                 total_minor=total_minor,
                 currency_code=cart.currency_code,
                 recipient=recipient,
-                status='pending' if payment_method == 'oxapay' else 'pending',  # Will be updated
+                status='pending',  # Will be updated to 'paid' for wallet payment below
             )
             
-            # Create order items
+            # Create order items (supports both Account and FullzPackage)
             for cart_item in cart.items.all():
                 OrderItem.objects.create(
                     order=order,
                     account=cart_item.account,
+                    fullz_package=cart_item.fullz_package,
                     quantity=cart_item.quantity,
                     unit_price_minor=cart_item.unit_price_minor,
                 )
@@ -179,6 +215,16 @@ class OrderViewSet(viewsets.ModelViewSet):
                 # Mark order as paid
                 order.status = 'paid'
                 order.save()
+                
+                # Send order confirmation email to ALL confirmed purchases
+                try:
+                    from notifications.services import send_order_confirmation_email
+                    send_order_confirmation_email(order)
+                except Exception as e:
+                    # Log error but don't fail order creation
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to send order confirmation email for order {order.order_number}: {e}")
                 
                 # Clear cart
                 cart.items.all().delete()

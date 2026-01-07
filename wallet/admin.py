@@ -9,6 +9,9 @@ from .models import (
     OnChainTransaction,
     OxaPayPayment,
     OxaPayStaticAddress,
+    HotWallet,
+    ColdWallet,
+    SweepTransaction,
 )
 
 
@@ -258,3 +261,145 @@ class OxaPayStaticAddressAdmin(admin.ModelAdmin):
     def address_short(self, obj):
         return f"{obj.address[:20]}...{obj.address[-10:]}"
     address_short.short_description = 'Address'
+
+
+@admin.register(HotWallet)
+class HotWalletAdmin(admin.ModelAdmin):
+    """Admin for Hot Wallets - Online wallets that collect user deposits"""
+    list_display = (
+        'network',
+        'address_short',
+        'get_balance_display',
+        'is_active',
+        'last_sweep_at',
+        'last_consolidation_at',
+    )
+    list_filter = ('network', 'is_active', 'created_at')
+    search_fields = ('address', 'network__name', 'network__key')
+    list_select_related = ('network',)
+    readonly_fields = ('id', 'created_at', 'updated_at', 'balance_atomic')
+    
+    fieldsets = (
+        ('Wallet Info', {
+            'fields': ('network', 'address', 'is_active')
+        }),
+        ('Keys & Derivation', {
+            'fields': ('encrypted_xprv', 'derivation_path'),
+            'description': 'WARNING: encrypted_xprv contains encrypted private keys. Handle with extreme care.'
+        }),
+        ('Balance', {
+            'fields': ('balance_atomic',),
+            'description': 'Balance in atomic units (satoshis, wei, etc.). Updated automatically.'
+        }),
+        ('Activity', {
+            'fields': ('last_sweep_at', 'last_consolidation_at'),
+        }),
+        ('Metadata', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def address_short(self, obj):
+        return f"{obj.address[:20]}...{obj.address[-10:]}"
+    address_short.short_description = 'Address'
+    
+    def get_balance_display(self, obj):
+        """Display balance in human-readable format"""
+        if obj.network.decimals:
+            balance = obj.balance_atomic / (10 ** obj.network.decimals)
+            return f"{balance:.{min(obj.network.decimals, 8)}f} {obj.network.native_symbol}"
+        return f"{obj.balance_atomic} atomic units"
+    get_balance_display.short_description = 'Balance'
+
+
+@admin.register(ColdWallet)
+class ColdWalletAdmin(admin.ModelAdmin):
+    """Admin for Cold Wallets - Offline reserve wallets (no private keys stored)"""
+    list_display = (
+        'network',
+        'name',
+        'address_short',
+        'is_active',
+        'created_at',
+    )
+    list_filter = ('network', 'is_active', 'created_at')
+    search_fields = ('address', 'name', 'network__name', 'network__key')
+    list_select_related = ('network',)
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    
+    fieldsets = (
+        ('Wallet Info', {
+            'fields': ('network', 'name', 'address', 'is_active')
+        }),
+        ('Security Note', {
+            'fields': (),
+            'description': 'Cold wallets are offline reserves. Only the address is stored here. Private keys should NEVER be stored on the server - keep them in cold storage (hardware wallet, paper wallet, etc.).'
+        }),
+        ('Metadata', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def address_short(self, obj):
+        return f"{obj.address[:20]}...{obj.address[-10:]}"
+    address_short.short_description = 'Address'
+
+
+@admin.register(SweepTransaction)
+class SweepTransactionAdmin(admin.ModelAdmin):
+    """Admin for Sweep Transactions - Tracks funds moved from user addresses to hot wallet"""
+    list_display = (
+        'tx_hash_short',
+        'user',
+        'network',
+        'get_amount_display',
+        'status',
+        'confirmations',
+        'created_at',
+    )
+    list_filter = ('status', 'network', 'created_at')
+    search_fields = ('tx_hash', 'user__email', 'from_address', 'to_address')
+    list_select_related = ('user', 'network', 'onchain_tx', 'hot_wallet')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'tx_hash', 'confirmations')
+    list_editable = ('status',)  # Allow quick status updates
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Sweep Details', {
+            'fields': ('tx_hash', 'network', 'user', 'status')
+        }),
+        ('Addresses', {
+            'fields': ('from_address', 'to_address', 'hot_wallet')
+        }),
+        ('Amounts', {
+            'fields': ('amount_atomic', 'fee_atomic', 'confirmations', 'required_confirmations')
+        }),
+        ('Retry Logic', {
+            'fields': ('retry_count', 'max_retries', 'error_message'),
+        }),
+        ('Relations', {
+            'fields': ('onchain_tx',),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def tx_hash_short(self, obj):
+        if obj.tx_hash:
+            return f"{obj.tx_hash[:16]}...{obj.tx_hash[-8:]}"
+        return "Pending..."
+    tx_hash_short.short_description = 'TX Hash'
+    
+    def get_amount_display(self, obj):
+        """Display amount in human-readable format"""
+        if obj.network.decimals:
+            amount = obj.amount_atomic / (10 ** obj.network.decimals)
+            fee = obj.fee_atomic / (10 ** obj.network.decimals)
+            return f"{amount:.{min(obj.network.decimals, 8)}f} {obj.network.native_symbol} (fee: {fee:.{min(obj.network.decimals, 8)}f})"
+        return f"{obj.amount_atomic} atomic units"
+    get_amount_display.short_description = 'Amount'

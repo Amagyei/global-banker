@@ -27,21 +27,35 @@ class Cart(models.Model):
 
 
 class CartItem(models.Model):
-    """Item in shopping cart"""
+    """Item in shopping cart - supports both Account and FullzPackage"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
-    account = models.ForeignKey('catalog.Account', on_delete=models.CASCADE, related_name='cart_items')
+    account = models.ForeignKey('catalog.Account', on_delete=models.CASCADE, related_name='cart_items', null=True, blank=True)
+    fullz_package = models.ForeignKey('catalog.FullzPackage', on_delete=models.CASCADE, related_name='cart_items', null=True, blank=True)
     quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
     unit_price_minor = models.BigIntegerField()  # price at time of adding (denormalized)
     total_price_minor = models.BigIntegerField()  # unit_price * quantity (denormalized)
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = [['cart', 'account']]  # prevent duplicates, update quantity instead
+        unique_together = [
+            ['cart', 'account'],  # prevent duplicate accounts
+            ['cart', 'fullz_package'],  # prevent duplicate packages
+        ]
         ordering = ['-added_at']
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(account__isnull=False, fullz_package__isnull=True) |
+                    models.Q(account__isnull=True, fullz_package__isnull=False)
+                ),
+                name='cart_item_must_have_account_or_package'
+            )
+        ]
 
     def __str__(self):
-        return f"{self.quantity}x {self.account.name} in {self.cart.user.email}'s cart"
+        item_name = self.account.name if self.account else self.fullz_package.name
+        return f"{self.quantity}x {item_name} in {self.cart.user.email}'s cart"
 
     def save(self, *args, **kwargs):
         """Auto-calculate total_price_minor"""
@@ -93,10 +107,11 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
-    """Item in an order"""
+    """Item in an order - supports both Account and FullzPackage"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
-    account = models.ForeignKey('catalog.Account', on_delete=models.PROTECT, related_name='order_items')
+    account = models.ForeignKey('catalog.Account', on_delete=models.PROTECT, related_name='order_items', null=True, blank=True)
+    fullz_package = models.ForeignKey('catalog.FullzPackage', on_delete=models.PROTECT, related_name='order_items', null=True, blank=True)
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     unit_price_minor = models.BigIntegerField()  # price at time of purchase
     total_price_minor = models.BigIntegerField()  # unit_price * quantity
@@ -108,9 +123,19 @@ class OrderItem(models.Model):
         indexes = [
             models.Index(fields=['order']),
         ]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(account__isnull=False, fullz_package__isnull=True) |
+                    models.Q(account__isnull=True, fullz_package__isnull=False)
+                ),
+                name='order_item_must_have_account_or_package'
+            )
+        ]
 
     def __str__(self):
-        return f"{self.quantity}x {self.account.name} in {self.order.order_number}"
+        item_name = self.account.name if self.account else self.fullz_package.name
+        return f"{self.quantity}x {item_name} in {self.order.order_number}"
 
     def save(self, *args, **kwargs):
         """Auto-calculate total_price_minor"""
