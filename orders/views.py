@@ -61,7 +61,7 @@ class CartViewSet(viewsets.ModelViewSet):
                 fullz_package=None,
                 defaults={
                     'quantity': quantity,
-                    'unit_price_minor': account.price_minor,
+                    'unit_price_minor': account.price_minor.amount,
                 }
             )
             
@@ -81,7 +81,7 @@ class CartViewSet(viewsets.ModelViewSet):
                 fullz_package=fullz_package,
                 defaults={
                     'quantity': quantity,
-                    'unit_price_minor': fullz_package.price_minor,
+                    'unit_price_minor': fullz_package.price_minor.amount,
                 }
             )
             
@@ -184,30 +184,35 @@ class OrderViewSet(viewsets.ModelViewSet):
                     defaults={'currency_code': 'USD', 'balance_minor': 0}
                 )
                 
-                if wallet.balance_minor < total_minor:
+                # All fields are now MoneyField (dollars) - direct comparison
+                # total_minor is Decimal from Cart property
+                from decimal import Decimal
+                total_decimal = Decimal(str(total_minor))
+                
+                if wallet.balance_minor.amount < total_decimal:
                     return Response(
                         {
                             'detail': 'Insufficient wallet balance',
-                            'required': total_minor / 100,
-                            'available': wallet.balance_minor / 100,
-                            'shortfall': (total_minor - wallet.balance_minor) / 100,
+                            'required': float(total_decimal),
+                            'available': float(wallet.balance_minor.amount),
+                            'shortfall': float(total_decimal) - float(wallet.balance_minor.amount),
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
-                # Deduct from wallet
-                wallet.balance_minor -= total_minor
+                # Deduct from wallet - subtract the decimal amount
+                wallet.balance_minor = wallet.balance_minor.amount - total_decimal
                 wallet.save()
                 
-                # Create transaction (debit)
+                # Create transaction (debit) - all MoneyFields now
                 Transaction.objects.create(
                     user=request.user,
                     direction='debit',
                     category='purchase',
-                    amount_minor=total_minor,
+                    amount_minor=total_decimal,
                     currency_code=cart.currency_code,
                     description=f'Order {order.order_number}',
-                    balance_after_minor=wallet.balance_minor,
+                    balance_after_minor=wallet.balance_minor.amount,
                     status='completed',
                     related_order_id=order.id,
                 )

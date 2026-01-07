@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.contrib.auth import get_user_model
+from djmoney.models.fields import MoneyField
 
 User = get_user_model()
 
@@ -31,10 +32,10 @@ class Transaction(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transactions')
     direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
-    amount_minor = models.BigIntegerField()  # amount in minor units
+    amount_minor = MoneyField(max_digits=19, decimal_places=2, default_currency='USD')
     currency_code = models.CharField(max_length=3)  # "USD", "GBP", "CAD"
     description = models.CharField(max_length=500)
-    balance_after_minor = models.BigIntegerField()  # balance after this transaction
+    balance_after_minor = MoneyField(max_digits=19, decimal_places=2, default_currency='USD')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     # Related objects (nullable for now - will link when other apps are implemented)
     related_order_id = models.UUIDField(null=True, blank=True)  # Order ID (will be FK later)
@@ -56,4 +57,4 @@ class Transaction(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.user.email} - {self.get_direction_display()} {self.get_category_display()} - {self.amount_minor / 100:.2f} {self.currency_code} ({self.get_status_display()})"
+        return f"{self.user.email} - {self.get_direction_display()} {self.get_category_display()} - {self.amount_minor.amount:.2f} {self.currency_code} ({self.get_status_display()})"

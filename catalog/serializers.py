@@ -75,13 +75,14 @@ class AccountSerializer(serializers.ModelSerializer):
 
     def get_balance(self, obj):
         """Format balance as currency string - uses account's currency"""
-        currency_symbol = {'USD': '$', 'GBP': '£', 'CAD': 'C$'}.get(obj.currency_code, '$')
-        return f"{currency_symbol}{obj.balance_minor / 100:.2f}"
+        # currency_symbol = {'USD': '$', 'GBP': '£', 'CAD': 'C$'}.get(obj.currency_code, '$')
+        # return f"{currency_symbol}{obj.balance_minor.amount}"
+        return obj.balance_minor.amount
+
 
     def get_price(self, obj):
         """Format price as currency string - ALWAYS USD for sales"""
-        # All prices are in USD regardless of account currency
-        return f"${obj.price_minor / 100:.2f}"
+        return obj.price_minor.amount
 
 
 class FullzPackageSerializer(serializers.ModelSerializer):
@@ -119,7 +120,7 @@ class FullzPackageSerializer(serializers.ModelSerializer):
 
     def get_price(self, obj):
         """Format price as currency string - ALWAYS USD for sales"""
-        return f"${obj.price_minor / 100:.2f}"
+        return obj.price_minor.amount
 
 
 class FullzSerializer(serializers.ModelSerializer):

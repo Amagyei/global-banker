@@ -2,6 +2,7 @@ import uuid
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator
+from djmoney.models.fields import MoneyField
 
 User = get_user_model()
 
@@ -23,7 +24,9 @@ class Cart(models.Model):
     @property
     def total_minor(self):
         """Calculate total price of all items in cart"""
-        return sum(item.total_price_minor for item in self.items.all())
+        from decimal import Decimal
+        total = sum((item.total_price_minor.amount for item in self.items.all()), Decimal('0'))
+        return total
 
 
 class CartItem(models.Model):
@@ -33,8 +36,8 @@ class CartItem(models.Model):
     account = models.ForeignKey('catalog.Account', on_delete=models.CASCADE, related_name='cart_items', null=True, blank=True)
     fullz_package = models.ForeignKey('catalog.FullzPackage', on_delete=models.CASCADE, related_name='cart_items', null=True, blank=True)
     quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
-    unit_price_minor = models.BigIntegerField()  # price at time of adding (denormalized)
-    total_price_minor = models.BigIntegerField()  # unit_price * quantity (denormalized)
+    unit_price_minor = MoneyField(max_digits=14, decimal_places=2, default_currency='USD')
+    total_price_minor = MoneyField(max_digits=14, decimal_places=2, default_currency='USD')
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -59,7 +62,7 @@ class CartItem(models.Model):
 
     def save(self, *args, **kwargs):
         """Auto-calculate total_price_minor"""
-        self.total_price_minor = self.unit_price_minor * self.quantity
+        self.total_price_minor = self.unit_price_minor.amount * self.quantity
         super().save(*args, **kwargs)
 
 
@@ -77,9 +80,9 @@ class Order(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
     order_number = models.CharField(max_length=50, unique=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    subtotal_minor = models.BigIntegerField()
-    fees_minor = models.BigIntegerField(default=0)
-    total_minor = models.BigIntegerField()
+    subtotal_minor = MoneyField(max_digits=14, decimal_places=2, default_currency='USD')
+    fees_minor = MoneyField(max_digits=14, decimal_places=2, default_currency='USD', default=0)
+    total_minor = MoneyField(max_digits=14, decimal_places=2, default_currency='USD')
     currency_code = models.CharField(max_length=3, default='USD')  # Always USD for pricing
     recipient = models.JSONField(default=dict)  # recipient details
     created_at = models.DateTimeField(auto_now_add=True)
@@ -113,8 +116,8 @@ class OrderItem(models.Model):
     account = models.ForeignKey('catalog.Account', on_delete=models.PROTECT, related_name='order_items', null=True, blank=True)
     fullz_package = models.ForeignKey('catalog.FullzPackage', on_delete=models.PROTECT, related_name='order_items', null=True, blank=True)
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
-    unit_price_minor = models.BigIntegerField()  # price at time of purchase
-    total_price_minor = models.BigIntegerField()  # unit_price * quantity
+    unit_price_minor = MoneyField(max_digits=14, decimal_places=2, default_currency='USD')
+    total_price_minor = MoneyField(max_digits=14, decimal_places=2, default_currency='USD')
     metadata = models.JSONField(default=dict, blank=True)  # delivery codes, etc.
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -139,7 +142,7 @@ class OrderItem(models.Model):
 
     def save(self, *args, **kwargs):
         """Auto-calculate total_price_minor"""
-        self.total_price_minor = self.unit_price_minor * self.quantity
+        self.total_price_minor = self.unit_price_minor.amount * self.quantity
         super().save(*args, **kwargs)
 
 

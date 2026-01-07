@@ -365,7 +365,8 @@ class BlockchainMonitor:
         from .models import Wallet
         from transactions.models import Transaction
         
-        amount_minor = onchain_tx.amount_minor
+        # All fields are now MoneyField - use dollars directly
+        amount = onchain_tx.amount_minor  # MoneyField
         
         # Credit user's wallet
         wallet, _ = Wallet.objects.get_or_create(
@@ -375,19 +376,19 @@ class BlockchainMonitor:
         
         # Only credit if not already credited (check if transaction record exists)
         if not Transaction.objects.filter(related_onchain_tx_id=onchain_tx.id).exists():
-            wallet.balance_minor += amount_minor
+            wallet.balance_minor += amount.amount
             wallet.save()
-            logger.info(f"Credited ${amount_minor/100:.2f} to wallet for user {onchain_tx.user.email} after sweep confirmation")
+            logger.info(f"Credited ${amount.amount:.2f} to wallet for user {onchain_tx.user.email} after sweep confirmation")
             
-            # Create transaction record with sweep tx hash
+            # Create transaction record with sweep tx hash - all MoneyFields now
             Transaction.objects.create(
                 user=onchain_tx.user,
                 direction='credit',
                 category='topup',
-                amount_minor=amount_minor,
+                amount_minor=amount.amount,
                 currency_code='USD',
                 description=f'Crypto deposit via {onchain_tx.network.name}',
-                balance_after_minor=wallet.balance_minor,
+                balance_after_minor=wallet.balance_minor.amount,
                 status='completed',
                 related_topup_intent_id=onchain_tx.topup_intent.id if onchain_tx.topup_intent else None,
                 related_onchain_tx_id=onchain_tx.id,
@@ -419,15 +420,15 @@ class BlockchainMonitor:
         from .exchange_rates import convert_crypto_to_usd
         
         # Simulate receiving the expected amount in crypto
-        # Convert expected USD amount back to crypto for simulation
-        expected_usd = topup_intent.amount_minor / 100
+        # topup_intent.amount_minor is now MoneyField (dollars)
+        expected_usd = float(topup_intent.amount_minor.amount)
         # Use a rough rate to calculate crypto amount (this is just for simulation)
         if topup_intent.network.native_symbol.upper() == 'BTC':
             simulated_crypto_atomic = int(expected_usd / 50000 * 1e8)  # Rough BTC rate
         elif topup_intent.network.native_symbol.upper() in ['ETH', 'ETHEREUM']:
             simulated_crypto_atomic = int(expected_usd / 3000 * 1e18)  # Rough ETH rate
         else:
-            simulated_crypto_atomic = topup_intent.amount_minor * 100  # Default
+            simulated_crypto_atomic = int(expected_usd * 100)  # Default
         
         # Create simulated on-chain transaction
         onchain_tx = OnChainTransaction.objects.create(
@@ -450,23 +451,23 @@ class BlockchainMonitor:
         topup_intent.status = 'succeeded'
         topup_intent.save()
         
-        # Credit user's wallet
+        # Credit user's wallet - all fields are MoneyField (dollars)
         wallet, _ = Wallet.objects.get_or_create(
             user=deposit_address.user,
             defaults={'currency_code': 'USD', 'balance_minor': 0}
         )
-        wallet.balance_minor += topup_intent.amount_minor
+        wallet.balance_minor += topup_intent.amount_minor.amount
         wallet.save()
         
-        # Create transaction record
+        # Create transaction record - all MoneyFields now
         Transaction.objects.create(
             user=deposit_address.user,
             direction='credit',
             category='topup',
-            amount_minor=topup_intent.amount_minor,
+            amount_minor=topup_intent.amount_minor.amount,
             currency_code='USD',
             description=f'Crypto deposit via {topup_intent.network.name} (Test Mode)',
-            balance_after_minor=wallet.balance_minor,
+            balance_after_minor=wallet.balance_minor.amount,
             status='completed',
             related_topup_intent_id=topup_intent.id,
             related_onchain_tx_id=onchain_tx.id,

@@ -18,6 +18,7 @@ uvicorn==0.38.0
 gunicorn==23.0.0
 python-dotenv==1.0.1
 dj-database-url==2.1.0
+django-money==3.0.0
 
 # Wallet dependencies
 bip-utils>=2.9.0  # For BIP84 native segwit derivation (primary)
@@ -26,6 +27,7 @@ base58>=2.1.1  # For zpub to xpub conversion (required for BIP84)
 django-redis>=5.4.0  # For Redis cache backend
 cryptography>=41.0.0  # For private key encryption (AES-256)
 bit>=0.8.0  # For Bitcoin transaction creation and broadcasting
+<<<<<<< HEAD
 pycryptodome>=3.19.0  # For Keccak-256 hash (Ethereum address derivation)
 django-anymail>=10.0  # For Brevo email backend
 
@@ -41,3 +43,4 @@ django-ratelimit>=4.1.0
 # Address validation
 eth-utils>=2.3.0  # For Ethereum address validation
 python-bitcoinlib>=0.12.0  # For Bitcoin address validation
+pycryptodome>=3.19.0  # For Keccak-256 hash (Ethereum address derivation)

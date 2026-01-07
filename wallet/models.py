@@ -6,6 +6,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from datetime import timedelta
+from djmoney.models.fields import MoneyField
 
 User = get_user_model()
 
@@ -99,8 +100,8 @@ class Wallet(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='wallet', unique=True)
     currency_code = models.CharField(max_length=3, default='USD')
-    balance_minor = models.BigIntegerField(default=0)  # Balance in minor units (cents)
-    pending_minor = models.BigIntegerField(default=0)  # Pending top-ups
+    balance_minor = MoneyField(max_digits=19, decimal_places=2, default_currency='USD', default=0)
+    pending_minor = MoneyField(max_digits=19, decimal_places=2, default_currency='USD', default=0)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -109,7 +110,7 @@ class Wallet(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.user.email} - ${self.balance_minor / 100:.2f}"
+        return f"{self.user.email} - ${self.balance_minor.amount:.2f}"
 
 
 class DepositAddress(models.Model):
@@ -144,7 +145,7 @@ class TopUpIntent(models.Model):
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='topup_intents')
-    amount_minor = models.BigIntegerField()  # Amount in USD minor units (for user history)
+    amount_minor = MoneyField(max_digits=19, decimal_places=2, default_currency='USD')
     currency_code = models.CharField(max_length=3, default='USD')
     network = models.ForeignKey(CryptoNetwork, on_delete=models.CASCADE, related_name='topup_intents')
     deposit_address = models.ForeignKey(DepositAddress, on_delete=models.CASCADE, related_name='topup_intents', null=True, blank=True)
@@ -161,7 +162,7 @@ class TopUpIntent(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.user.email} - {self.amount_minor / 100:.2f} {self.currency_code} - {self.get_status_display()}"
+        return f"{self.user.email} - {self.amount_minor.amount:.2f} {self.currency_code} - {self.get_status_display()}"
 
 
 class OnChainTransaction(models.Model):
@@ -179,7 +180,7 @@ class OnChainTransaction(models.Model):
     from_address = models.CharField(max_length=128)
     to_address = models.CharField(max_length=128)
     amount_atomic = models.BigIntegerField()  # Amount in smallest unit (wei, satoshi)
-    amount_minor = models.BigIntegerField()  # Converted to USD minor units
+    amount_minor = MoneyField(max_digits=19, decimal_places=2, default_currency='USD')  # Converted to USD
     confirmations = models.IntegerField(default=0)
     required_confirmations = models.IntegerField(default=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')

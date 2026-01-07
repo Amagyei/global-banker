@@ -9,7 +9,8 @@
 .env.production
 
 # Python
-__pycache__/
+**/__pycache__/
+**/*.pyc
 *.py[cod]
 *$py.class
 *.so
@@ -56,4 +57,3 @@ htmlcov/
 # Migrations (optional - uncomment if you don't want to track migrations)
 # */migrations/*.py
 # !*/migrations/__init__.py
-db.sqlite3-journal
